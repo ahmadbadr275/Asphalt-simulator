@@ -1,332 +1,444 @@
 <!doctype html>
 <html>
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>My 3D Racer</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>My 3D Racer — Smooth</title>
 
-  <!-- Link to the SVG favicon file placed at the repo root -->
+  <!-- SVG favicon (place favicon.svg at repo root) -->
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="alternate icon" href="/favicon.svg" type="image/svg+xml">
 
   <style>
-    body{margin:0;overflow:hidden;background:#111}
-    #ui{position:fixed;left:0;right:0;bottom:12px;display:flex;justify-content:center;gap:12px;pointer-events:none;z-index:10}
-    .btn{width:72px;height:72px;border-radius:12px;background:rgba(0,0,0,0.45);color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;pointer-events:auto;user-select:none}
+    html,body{height:100%;margin:0;background:#0b1220;color:#fff;font-family:Inter,system-ui,Arial}
+    #info{position:fixed;left:12px;top:12px;color:#fff;background:rgba(0,0,0,0.35);padding:8px;border-radius:8px;z-index:20}
+    #ui{position:fixed;left:0;right:0;bottom:12px;display:flex;justify-content:center;gap:12px;pointer-events:none;z-index:20}
+    .btn{width:72px;height:72px;border-radius:12px;background:linear-gradient(180deg,rgba(255,255,255,0.06),rgba(0,0,0,0.25));color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;pointer-events:auto;user-select:none;backdrop-filter:blur(4px)}
     #left{transform:translateX(-10px)} #right{transform:translateX(10px)}
     #forward{width:120px;border-radius:18px}
-    #info{position:fixed;left:12px;top:12px;color:#fff;background:rgba(0,0,0,0.35);padding:8px;border-radius:8px;z-index:10}
-    canvas{touch-action:none;display:block}
+    canvas{display:block;touch-action:none}
+    /* small HUD */
+    .hud {position:fixed;right:12px;top:12px;background:rgba(0,0,0,0.25);padding:8px;border-radius:8px;font-size:13px}
   </style>
 </head>
 <body>
-<div id="info"><b>Pos</b> 0,0 &nbsp; <b>Speed</b> 0</div>
-<div id="ui">
-  <div id="left" class="btn">◀</div>
-  <div id="forward" class="btn">▲</div>
-  <div id="right" class="btn">▶</div>
-</div>
+  <div id="info"><b>Pos</b> 0,0 &nbsp; <b>Speed</b> 0</div>
+  <div class="hud" id="raceInfo">CPU: Ready</div>
+  <div id="ui">
+    <div id="left" class="btn">◀</div>
+    <div id="forward" class="btn">▲</div>
+    <div id="right" class="btn">▶</div>
+  </div>
 
-<script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
-<script>
-/* ===== Scene Setup ===== */
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87ceeb);
+  <script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
 
-const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 1000);
-camera.position.set(0, 8, 18);
+  <script>
+  // ====== Scene & Renderer ======
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x87c0ff);
 
-const renderer = new THREE.WebGLRenderer({antialias:true});
-renderer.setSize(innerWidth, innerHeight);
-renderer.shadowMap.enabled = true;
-document.body.appendChild(renderer.domElement);
+  const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 1000);
+  camera.position.set(0, 8, 18);
 
-const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1.0);
-scene.add(hemi);
-const dir = new THREE.DirectionalLight(0xffffff, 0.9);
-dir.position.set(5,10,7);
-dir.castShadow = true;
-dir.shadow.mapSize.set(1024,1024);
-scene.add(dir);
-
-/* ===== Track Spline and Road ===== */
-const points = [
-  new THREE.Vector3(0,0,0),
-  new THREE.Vector3(12,0,-6),
-  new THREE.Vector3(20,0,6),
-  new THREE.Vector3(8,0,18),
-  new THREE.Vector3(-10,0,14),
-  new THREE.Vector3(-18,0,2),
-  new THREE.Vector3(-10,0,-12),
-  new THREE.Vector3(4,0,-18),
-  new THREE.Vector3(12,0,-6)
-];
-const spline = new THREE.CatmullRomCurve3(points, true, 'catmullrom', 0.5);
-
-function buildRoad(curve, width, segments){
-  const verts = [];
-  const indices = [];
-  const uvs = [];
-  for(let i=0;i<=segments;i++){
-    const t = i/segments;
-    const p = curve.getPointAt(t);
-    const tangent = curve.getTangentAt(t).normalize();
-    const normal = new THREE.Vector3(0,1,0);
-    const binormal = new THREE.Vector3().crossVectors(normal, tangent).normalize();
-    const left = p.clone().add(binormal.clone().multiplyScalar(-width*0.5));
-    const right = p.clone().add(binormal.clone().multiplyScalar(width*0.5));
-    verts.push(left.x, left.y+0.01, left.z);
-    verts.push(right.x, right.y+0.01, right.z);
-    uvs.push(t,0); uvs.push(t,1);
-    if(i<segments){
-      const a = i*2, b = i*2+1, c = (i+1)*2, d = (i+1)*2+1;
-      indices.push(a,b,c); indices.push(b,d,c);
-    }
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(verts,3));
-  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs,2));
-  geo.setIndex(indices);
-  geo.computeVertexNormals();
-  return geo;
-}
-const roadWidth = 6.5;
-const roadGeo = buildRoad(spline, roadWidth, 400);
-const roadMat = new THREE.MeshStandardMaterial({color:0x333333, roughness:0.8});
-const road = new THREE.Mesh(roadGeo, roadMat);
-road.receiveShadow = true;
-scene.add(road);
-
-/* ===== Borders (walls) ===== */
-const wallMaterial = new THREE.MeshStandardMaterial({color:0x222222});
-const walls = new THREE.Group();
-const wallHeight = 1.2;
-const wallThickness = 0.6;
-const samples = 200;
-for(let i=0;i<samples;i++){
-  const t = i/samples;
-  const p = spline.getPointAt(t);
-  const tangent = spline.getTangentAt(t).normalize();
-  const binormal = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), tangent).normalize();
-  const leftPos = p.clone().add(binormal.clone().multiplyScalar(-roadWidth*0.5 - wallThickness*0.5));
-  const rightPos = p.clone().add(binormal.clone().multiplyScalar(roadWidth*0.5 + wallThickness*0.5));
-  const angle = Math.atan2(tangent.x, tangent.z);
-  const leftWall = new THREE.Mesh(new THREE.BoxGeometry(wallThickness, wallHeight, 1.0), wallMaterial);
-  leftWall.position.copy(leftPos).y = wallHeight*0.5;
-  leftWall.rotation.y = -angle;
-  leftWall.castShadow = true;
-  walls.add(leftWall);
-  const rightWall = leftWall.clone();
-  rightWall.position.copy(rightPos).y = wallHeight*0.5;
-  walls.add(rightWall);
-}
-scene.add(walls);
-
-/* ===== Ground beyond track ===== */
-const ground = new THREE.Mesh(
-  new THREE.PlaneGeometry(400,400),
-  new THREE.MeshStandardMaterial({color:0x2d7a2d})
-);
-ground.rotation.x = -Math.PI/2;
-ground.position.y = -0.01;
-ground.receiveShadow = true;
-scene.add(ground);
-
-/* ===== Car Model ===== */
-const car = new THREE.Group();
-function makeCar(){
-  const bodyMat = new THREE.MeshStandardMaterial({color:0xff3333, metalness:0.2, roughness:0.4});
-  const cabinMat = new THREE.MeshStandardMaterial({color:0x222222, metalness:0.1, roughness:0.2});
-  const wheelMat = new THREE.MeshStandardMaterial({color:0x111111, metalness:0.1, roughness:0.6});
-  const body = new THREE.Mesh(new THREE.BoxGeometry(1.8,0.5,3.2), bodyMat);
-  body.position.y = 0.45;
-  body.castShadow = true;
-  car.add(body);
-  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.2,0.45,1.2), cabinMat);
-  cabin.position.set(0,0.85,-0.1);
-  cabin.castShadow = true;
-  car.add(cabin);
-  const wheelGeo = new THREE.CylinderGeometry(0.35,0.35,0.4,16);
-  wheelGeo.rotateZ(Math.PI/2);
-  const offsets = [
-    [0.9,0.25,1.05],
-    [-0.9,0.25,1.05],
-    [0.9,0.25,-1.05],
-    [-0.9,0.25,-1.05]
-  ];
-  offsets.forEach(o=>{
-    const w = new THREE.Mesh(wheelGeo, wheelMat);
-    w.position.set(o[0], o[1], o[2]);
-    w.castShadow = true;
-    car.add(w);
-  });
-}
-makeCar();
-scene.add(car);
-
-/* ===== Physics State (scalar speed) ===== */
-const state = {
-  speed: 0,
-  forwardInput: 0,
-  turnInput: 0,
-  maxSpeed: 1.2,
-  accel: 0.02,
-  brake: 0.06,
-  friction: 0.015,
-  turnSpeed: 0.045
-};
-
-/* ===== Precompute centerline samples for collision and respawn ===== */
-const centerSamples = [];
-const centerCount = 800;
-for(let i=0;i<centerCount;i++){
-  const t = i/centerCount;
-  centerSamples.push({t: t, p: spline.getPointAt(t)});
-}
-function nearestCenterPoint(pos){
-  let best = null, bestDist = Infinity;
-  for(let i=0;i<centerSamples.length;i++){
-    const d = pos.distanceToSquared(centerSamples[i].p);
-    if(d < bestDist){ bestDist = d; best = centerSamples[i]; }
-  }
-  return {point: best.p.clone(), t: best.t, distSqr: bestDist};
-}
-
-/* ===== Safe placement and respawn helpers ===== */
-const startT = 0.02;
-function placeCarAtT(t, backwardOffset = 4.0) {
-  const center = spline.getPointAt(t);
-  const tangent = spline.getTangentAt(t).normalize();
-  const forward = tangent.clone().multiplyScalar(-1);
-  const pos = center.clone().add(forward.clone().multiplyScalar(backwardOffset));
-  car.position.copy(pos);
-  car.position.y = 0.5;
-  const lookAt = center.clone();
-  car.lookAt(lookAt.x, lookAt.y, lookAt.z);
-  state.speed = 0;
-}
-placeCarAtT(startT);
-function respawnToNearestCenter() {
-  let bestIdx = 0;
-  let bestDist = Infinity;
-  for (let i = 0; i < centerSamples.length; i++) {
-    const d = car.position.distanceToSquared(centerSamples[i].p);
-    if (d < bestDist) { bestDist = d; bestIdx = i; }
-  }
-  const t = centerSamples[bestIdx].t;
-  placeCarAtT(t, 4.0);
-}
-
-/* ===== Controls (keyboard + touch) ===== */
-window.addEventListener('keydown', e=>{
-  if(e.key === 'w' || e.key === 'ArrowUp') state.forwardInput = 1;
-  if(e.key === 's' || e.key === 'ArrowDown') state.forwardInput = -1;
-  if(e.key === 'a' || e.key === 'ArrowLeft') state.turnInput = 1;
-  if(e.key === 'd' || e.key === 'ArrowRight') state.turnInput = -1;
-  if(e.key === 'r' || e.key === 'R') respawnToNearestCenter();
-});
-window.addEventListener('keyup', e=>{
-  if(e.key === 'w' || e.key === 'ArrowUp' || e.key === 's' || e.key === 'ArrowDown') state.forwardInput = 0;
-  if(e.key === 'a' || e.key === 'ArrowLeft' || e.key === 'd' || e.key === 'ArrowRight') state.turnInput = 0;
-});
-
-const leftBtn = document.getElementById('left');
-const rightBtn = document.getElementById('right');
-const forwardBtn = document.getElementById('forward');
-
-function bindTouch(el, onStart, onEnd){
-  el.addEventListener('touchstart', e=>{ e.preventDefault(); onStart(); }, {passive:false});
-  el.addEventListener('touchend', e=>{ e.preventDefault(); onEnd(); }, {passive:false});
-  el.addEventListener('mousedown', e=>{ onStart(); });
-  el.addEventListener('mouseup', e=>{ onEnd(); });
-  el.addEventListener('mouseleave', e=>{ onEnd(); });
-}
-bindTouch(leftBtn, ()=>state.turnInput = 1, ()=>{ if(state.turnInput===1) state.turnInput = 0; });
-bindTouch(rightBtn, ()=>state.turnInput = -1, ()=>{ if(state.turnInput===-1) state.turnInput = 0; });
-bindTouch(forwardBtn, ()=>state.forwardInput = 1, ()=>state.forwardInput = 0);
-
-// two-finger tap to respawn
-let touchStartCount = 0;
-window.addEventListener('touchstart', (e) => {
-  touchStartCount = e.touches.length;
-  if (touchStartCount >= 2) {
-    setTimeout(() => {
-      if (touchStartCount >= 2) respawnToNearestCenter();
-    }, 120);
-  }
-});
-window.addEventListener('touchend', () => { touchStartCount = 0; });
-
-/* ===== HUD ===== */
-const info = document.getElementById('info');
-
-/* ===== Main Loop ===== */
-let last = performance.now();
-function update(){
-  const now = performance.now();
-  const dt = Math.min(0.05, (now - last)/1000);
-  last = now;
-
-  // Acceleration / braking
-  if(state.forwardInput > 0){
-    state.speed += state.accel;
-  } else if(state.forwardInput < 0){
-    state.speed -= state.brake;
-  } else {
-    if(state.speed > 0) state.speed = Math.max(0, state.speed - state.friction);
-    else state.speed = Math.min(0, state.speed + state.friction);
-  }
-
-  // Clamp speed
-  state.speed = Math.max(-state.maxSpeed*0.5, Math.min(state.maxSpeed, state.speed));
-
-  // Steering: allow turning even when stopped by using a minimum turn factor
-  const rawFactor = Math.abs(state.speed) / state.maxSpeed;
-  const speedFactor = Math.max(0.25, Math.min(1, rawFactor)); // <-- ensures turning when speed is near zero
-  car.rotation.y += state.turnInput * state.turnSpeed * speedFactor;
-
-  // Move forward along local -Z (scale by dt to keep behavior stable across frame rates)
-  const forwardVec = new THREE.Vector3(0,0,-1).applyQuaternion(car.quaternion);
-  car.position.add(forwardVec.multiplyScalar(state.speed));
-
-  // Keep car at fixed height
-  car.position.y = 0.5;
-
-  // Collision with walls
-  const nearest = nearestCenterPoint(car.position);
-  const center = nearest.point;
-  const tangent = spline.getTangentAt(nearest.t).normalize();
-  const binormal = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), tangent).normalize();
-  const lateral = car.position.clone().sub(center).dot(binormal);
-  const halfRoad = roadWidth*0.5 - 0.35;
-
-  if(Math.abs(lateral) > halfRoad){
-    const push = (Math.abs(lateral) - halfRoad);
-    const dir = lateral > 0 ? -1 : 1;
-    car.position.add(binormal.clone().multiplyScalar(dir * push));
-    state.speed *= 0.35;
-  }
-
-  // Camera follow
-  const camOffset = new THREE.Vector3(0,4,10).applyQuaternion(car.quaternion);
-  const desired = car.position.clone().add(camOffset);
-  camera.position.lerp(desired, 0.12);
-  camera.lookAt(car.position.clone().add(new THREE.Vector3(0,0.6,0)));
-
-  // HUD
-  info.innerHTML = `<b>Pos</b> ${car.position.x.toFixed(1)}, ${car.position.z.toFixed(1)} &nbsp; <b>Speed</b> ${(state.speed*60).toFixed(1)}`;
-
-  renderer.render(scene, camera);
-  requestAnimationFrame(update);
-}
-update();
-
-/* ===== Resize ===== */
-window.addEventListener('resize', ()=> {
-  camera.aspect = innerWidth/innerHeight;
-  camera.updateProjectionMatrix();
+  const renderer = new THREE.WebGLRenderer({antialias:true});
   renderer.setSize(innerWidth, innerHeight);
-});
-</script>
+  renderer.shadowMap.enabled = true;
+  document.body.appendChild(renderer.domElement);
+
+  // lights
+  const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.9);
+  scene.add(hemi);
+  const dir = new THREE.DirectionalLight(0xffffff, 0.9);
+  dir.position.set(5, 10, 7);
+  dir.castShadow = true;
+  dir.shadow.mapSize.set(1024,1024);
+  scene.add(dir);
+
+  // subtle sky gradient plane behind horizon
+  const skyGeo = new THREE.PlaneGeometry(400, 200);
+  const skyMat = new THREE.MeshBasicMaterial({color:0x87c0ff});
+  const sky = new THREE.Mesh(skyGeo, skyMat);
+  sky.position.set(0, 60, -120);
+  sky.rotation.x = -Math.PI/6;
+  scene.add(sky);
+
+  // ====== Track Spline & Road ======
+  const points = [
+    new THREE.Vector3(0,0,0),
+    new THREE.Vector3(12,0,-6),
+    new THREE.Vector3(20,0,6),
+    new THREE.Vector3(8,0,18),
+    new THREE.Vector3(-10,0,14),
+    new THREE.Vector3(-18,0,2),
+    new THREE.Vector3(-10,0,-12),
+    new THREE.Vector3(4,0,-18),
+    new THREE.Vector3(12,0,-6)
+  ];
+  const spline = new THREE.CatmullRomCurve3(points, true, 'catmullrom', 0.5);
+
+  function buildRoad(curve, width, segments){
+    const verts = [];
+    const indices = [];
+    const uvs = [];
+    for(let i=0;i<=segments;i++){
+      const t = i/segments;
+      const p = curve.getPointAt(t);
+      const tangent = curve.getTangentAt(t).normalize();
+      const normal = new THREE.Vector3(0,1,0);
+      const binormal = new THREE.Vector3().crossVectors(normal, tangent).normalize();
+      const left = p.clone().add(binormal.clone().multiplyScalar(-width*0.5));
+      const right = p.clone().add(binormal.clone().multiplyScalar(width*0.5));
+      verts.push(left.x, left.y+0.01, left.z);
+      verts.push(right.x, right.y+0.01, right.z);
+      uvs.push(t,0); uvs.push(t,1);
+      if(i<segments){
+        const a = i*2, b = i*2+1, c = (i+1)*2, d = (i+1)*2+1;
+        indices.push(a,b,c); indices.push(b,d,c);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(verts,3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs,2));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+    return geo;
+  }
+
+  const roadWidth = 6.5;
+  const roadGeo = buildRoad(spline, roadWidth, 600);
+  const roadMat = new THREE.MeshStandardMaterial({color:0x2f2f2f, roughness:0.9});
+  const road = new THREE.Mesh(roadGeo, roadMat);
+  road.receiveShadow = true;
+  scene.add(road);
+
+  // road markings (center dashed)
+  const markMat = new THREE.LineBasicMaterial({color:0xfff1a8, linewidth:2});
+  const markPts = [];
+  const markSegments = 200;
+  for(let i=0;i<=markSegments;i++){
+    const t = i/markSegments;
+    const p = spline.getPointAt(t);
+    markPts.push(new THREE.Vector3(p.x, p.y+0.02, p.z));
+  }
+  const markLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints(markPts), markMat);
+  scene.add(markLine);
+
+  // ====== Walls ======
+  const wallMaterial = new THREE.MeshStandardMaterial({color:0x111111});
+  const walls = new THREE.Group();
+  const wallHeight = 1.2;
+  const wallThickness = 0.6;
+  const samples = 300;
+  for(let i=0;i<samples;i++){
+    const t = i/samples;
+    const p = spline.getPointAt(t);
+    const tangent = spline.getTangentAt(t).normalize();
+    const binormal = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), tangent).normalize();
+    const leftPos = p.clone().add(binormal.clone().multiplyScalar(-roadWidth*0.5 - wallThickness*0.5));
+    const rightPos = p.clone().add(binormal.clone().multiplyScalar(roadWidth*0.5 + wallThickness*0.5));
+    const segLen = spline.getLength() / samples;
+    const leftWall = new THREE.Mesh(new THREE.BoxGeometry(wallThickness, wallHeight, segLen*1.05), wallMaterial);
+    leftWall.position.copy(leftPos).y = wallHeight*0.5;
+    leftWall.lookAt(p.clone().add(tangent));
+    leftWall.castShadow = true;
+    walls.add(leftWall);
+    const rightWall = leftWall.clone();
+    rightWall.position.copy(rightPos).y = wallHeight*0.5;
+    walls.add(rightWall);
+  }
+  scene.add(walls);
+
+  // ====== Surrounding ground & props ======
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(800,800), new THREE.MeshStandardMaterial({color:0x2d7a2d}));
+  ground.rotation.x = -Math.PI/2;
+  ground.position.y = -0.01;
+  ground.receiveShadow = true;
+  scene.add(ground);
+
+  // simple distant hills (visual)
+  for(let i=0;i<12;i++){
+    const g = new THREE.Mesh(new THREE.ConeGeometry(8 + Math.random()*12, 20 + Math.random()*30, 8), new THREE.MeshStandardMaterial({color:0x1f6b2b}));
+    g.position.set((Math.random()-0.5)*200, -2, -80 - Math.random()*120);
+    g.rotation.y = Math.random()*Math.PI;
+    scene.add(g);
+  }
+
+  // ====== Car builder (player & CPU) ======
+  function buildCar(color='#ff3333'){
+    const group = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.8,0.5,3.2), new THREE.MeshStandardMaterial({color:color, metalness:0.2, roughness:0.4}));
+    body.position.y = 0.45;
+    body.castShadow = true;
+    group.add(body);
+    const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.2,0.45,1.2), new THREE.MeshStandardMaterial({color:0x111111, metalness:0.1, roughness:0.2}));
+    cabin.position.set(0,0.85,-0.1);
+    cabin.castShadow = true;
+    group.add(cabin);
+    const wheelGeo = new THREE.CylinderGeometry(0.35,0.35,0.4,16);
+    wheelGeo.rotateZ(Math.PI/2);
+    const offsets = [
+      [0.9,0.25,1.05],
+      [-0.9,0.25,1.05],
+      [0.9,0.25,-1.05],
+      [-0.9,0.25,-1.05]
+    ];
+    offsets.forEach(o=>{
+      const w = new THREE.Mesh(wheelGeo, new THREE.MeshStandardMaterial({color:0x0b0b0b}));
+      w.position.set(o[0], o[1], o[2]);
+      w.castShadow = true;
+      group.add(w);
+    });
+    return group;
+  }
+
+  const player = buildCar('#ff4d4d');
+  scene.add(player);
+
+  const cpu = buildCar('#4da6ff');
+  scene.add(cpu);
+
+  // ====== Physics state (improved) ======
+  const playerState = {
+    speed: 0,
+    heading: 0,            // radians
+    angularVel: 0,
+    forwardInput: 0,
+    turnInput: 0,
+    maxSpeed: 0.9,         // slightly less top speed
+    accel: 0.9,            // units per second^2 (scaled by dt)
+    brake: 2.2,
+    drag: 1.6,             // linear drag
+    lateralFriction: 6.0,  // resists lateral sliding
+    turnSpeed: 2.8         // angular acceleration
+  };
+
+  const cpuState = {
+    t: 0.12,               // spline parameter (start ahead)
+    speed: 0.55,           // CPU base speed (slower than player top)
+    maxSpeed: 0.75,
+    accel: 0.6,
+    lookAhead: 0.02
+  };
+
+  // precompute center samples for collision & nearest queries
+  const centerSamples = [];
+  const centerCount = 1200;
+  for(let i=0;i<centerCount;i++){
+    const t = i/centerCount;
+    centerSamples.push({t: t, p: spline.getPointAt(t)});
+  }
+  function nearestCenterPoint(pos){
+    let best = null, bestDist = Infinity, bestIdx = 0;
+    // coarse search: sample every N to speed up
+    const step = 4;
+    for(let i=0;i<centerSamples.length;i+=step){
+      const d = pos.distanceToSquared(centerSamples[i].p);
+      if(d < bestDist){ bestDist = d; best = centerSamples[i]; bestIdx = i; }
+    }
+    // refine around bestIdx
+    const start = Math.max(0, bestIdx - 16);
+    const end = Math.min(centerSamples.length-1, bestIdx + 16);
+    for(let i=start;i<=end;i++){
+      const d = pos.distanceToSquared(centerSamples[i].p);
+      if(d < bestDist){ bestDist = d; best = centerSamples[i]; }
+    }
+    return {point: best.p.clone(), t: best.t, distSqr: bestDist};
+  }
+
+  // ====== Safe placement & respawn helpers ======
+  const startT = 0.02;
+  function placeAtT(obj, t, offsetBack = 3.6){
+    const center = spline.getPointAt(t);
+    const tangent = spline.getTangentAt(t).normalize();
+    const forward = tangent.clone().multiplyScalar(-1);
+    const pos = center.clone().add(forward.clone().multiplyScalar(offsetBack));
+    obj.position.copy(pos);
+    obj.position.y = 0.5;
+    // orient to face along track
+    const lookAt = center.clone();
+    obj.lookAt(lookAt.x, lookAt.y, lookAt.z);
+  }
+  placeAtT(player, startT, 3.6);
+  placeAtT(cpu, startT + 0.06, 3.6);
+
+  function respawnPlayerToNearest(){
+    const nearest = nearestCenterPoint(player.position);
+    placeAtT(player, nearest.t, 3.6);
+    playerState.speed = 0;
+    playerState.angularVel = 0;
+  }
+
+  // ====== Controls (correct left/right mapping) ======
+  window.addEventListener('keydown', e=>{
+    if(e.key === 'w' || e.key === 'ArrowUp') playerState.forwardInput = 1;
+    if(e.key === 's' || e.key === 'ArrowDown') playerState.forwardInput = -1;
+    if(e.key === 'a' || e.key === 'ArrowLeft') playerState.turnInput = -1; // LEFT is -1
+    if(e.key === 'd' || e.key === 'ArrowRight') playerState.turnInput = +1; // RIGHT is +1
+    if(e.key === 'r' || e.key === 'R') respawnPlayerToNearest();
+  });
+  window.addEventListener('keyup', e=>{
+    if(e.key === 'w' || e.key === 'ArrowUp' || e.key === 's' || e.key === 'ArrowDown') playerState.forwardInput = 0;
+    if(e.key === 'a' || e.key === 'ArrowLeft' || e.key === 'd' || e.key === 'ArrowRight') playerState.turnInput = 0;
+  });
+
+  // Touch buttons (left/right corrected)
+  const leftBtn = document.getElementById('left');
+  const rightBtn = document.getElementById('right');
+  const forwardBtn = document.getElementById('forward');
+
+  function bindTouch(el, onStart, onEnd){
+    el.addEventListener('touchstart', e=>{ e.preventDefault(); onStart(); }, {passive:false});
+    el.addEventListener('touchend', e=>{ e.preventDefault(); onEnd(); }, {passive:false});
+    el.addEventListener('mousedown', e=>{ onStart(); });
+    el.addEventListener('mouseup', e=>{ onEnd(); });
+    el.addEventListener('mouseleave', e=>{ onEnd(); });
+  }
+  bindTouch(leftBtn, ()=>playerState.turnInput = -1, ()=>{ if(playerState.turnInput === -1) playerState.turnInput = 0; });
+  bindTouch(rightBtn, ()=>playerState.turnInput = +1, ()=>{ if(playerState.turnInput === +1) playerState.turnInput = 0; });
+  bindTouch(forwardBtn, ()=>playerState.forwardInput = 1, ()=>playerState.forwardInput = 0);
+
+  // two-finger tap to respawn
+  let touchStartCount = 0;
+  window.addEventListener('touchstart', (e) => {
+    touchStartCount = e.touches.length;
+    if (touchStartCount >= 2) {
+      setTimeout(() => {
+        if (touchStartCount >= 2) respawnPlayerToNearest();
+      }, 120);
+    }
+  });
+  window.addEventListener('touchend', () => { touchStartCount = 0; });
+
+  // ====== Main update loop (smooth physics) ======
+  const info = document.getElementById('info');
+  const raceInfo = document.getElementById('raceInfo');
+  let last = performance.now();
+
+  function update(){
+    const now = performance.now();
+    const dt = Math.min(0.05, (now - last)/1000);
+    last = now;
+
+    // --- Player physics (arcade but smooth) ---
+    // longitudinal acceleration
+    if(playerState.forwardInput > 0){
+      playerState.speed += playerState.accel * dt;
+    } else if(playerState.forwardInput < 0){
+      playerState.speed -= playerState.brake * dt;
+    } else {
+      // drag
+      const dragStep = playerState.drag * dt;
+      if(playerState.speed > 0) playerState.speed = Math.max(0, playerState.speed - dragStep);
+      else playerState.speed = Math.min(0, playerState.speed + dragStep);
+    }
+    // clamp speed
+    playerState.speed = Math.max(-playerState.maxSpeed*0.5, Math.min(playerState.maxSpeed, playerState.speed));
+
+    // angular acceleration (turning)
+    const desiredAngular = playerState.turnInput * playerState.turnSpeed * (0.25 + 0.75 * Math.min(1, Math.abs(playerState.speed)/playerState.maxSpeed));
+    // smooth angular velocity
+    playerState.angularVel += (desiredAngular - playerState.angularVel) * Math.min(1, 8 * dt);
+    playerState.heading += playerState.angularVel * dt;
+
+    // compute forward vector and lateral correction
+    const forwardVec = new THREE.Vector3(Math.sin(playerState.heading), 0, -Math.cos(playerState.heading));
+    // move
+    player.position.add(forwardVec.clone().multiplyScalar(playerState.speed * dt * 60)); // scale so feel matches earlier versions
+
+    // lateral friction: push lateral offset toward centerline when near walls
+    const nearest = nearestCenterPoint(player.position);
+    const center = nearest.point;
+    const tangent = spline.getTangentAt(nearest.t).normalize();
+    const binormal = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), tangent).normalize();
+    const lateral = player.position.clone().sub(center).dot(binormal);
+    const halfRoad = roadWidth*0.5 - 0.35;
+    if(Math.abs(lateral) > halfRoad){
+      const push = (Math.abs(lateral) - halfRoad);
+      const dir = lateral > 0 ? -1 : 1;
+      player.position.add(binormal.clone().multiplyScalar(dir * push));
+      playerState.speed *= 0.35;
+    } else {
+      // gentle centering when near edge
+      player.position.add(binormal.clone().multiplyScalar(-lateral * 0.02 * dt * playerState.lateralFriction));
+    }
+
+    // apply heading to player object (smooth)
+    const currentQuat = player.quaternion;
+    const targetQuat = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0,1,0), playerState.heading);
+    currentQuat.slerp(targetQuat, Math.min(1, 8 * dt));
+    player.quaternion.copy(currentQuat);
+
+    // keep height
+    player.position.y = 0.5;
+
+    // --- CPU behavior: follow spline smoothly ---
+    // advance CPU t based on its speed and spline length
+    const splineLen = spline.getLength();
+    // compute desired speed based on upcoming curvature
+    const lookT = (cpuState.t + cpuState.lookAhead) % 1;
+    const futureT = (cpuState.t + 0.02) % 1;
+    const curTangent = spline.getTangentAt(cpuState.t).normalize();
+    const futureTangent = spline.getTangentAt(futureT).normalize();
+    const angleDiff = Math.acos(Math.max(-1, Math.min(1, curTangent.dot(futureTangent))));
+    const curvatureFactor = 1 - Math.min(1, angleDiff * 6); // reduce speed on sharp turns
+    const targetCpuSpeed = cpuState.maxSpeed * (0.6 + 0.4 * curvatureFactor);
+
+    // accelerate/decelerate CPU smoothly
+    if(cpuState.speed < targetCpuSpeed) cpuState.speed += cpuState.accel * dt;
+    else cpuState.speed -= cpuState.accel * dt * 0.6;
+    cpuState.speed = Math.max(0.15, Math.min(cpuState.maxSpeed, cpuState.speed));
+
+    // advance along spline by distance = speed * dt * scale
+    const advance = (cpuState.speed * dt * 60) / splineLen;
+    cpuState.t = (cpuState.t + advance) % 1;
+
+    // place CPU on spline and orient
+    const cpuCenter = spline.getPointAt(cpuState.t);
+    const cpuTangent = spline.getTangentAt(cpuState.t).normalize();
+    const cpuForward = cpuTangent.clone().multiplyScalar(-1);
+    cpu.position.copy(cpuCenter.clone().add(cpuForward.clone().multiplyScalar(3.6)));
+    cpu.position.y = 0.5;
+    const look = cpuCenter.clone();
+    cpu.lookAt(look.x, look.y, look.z);
+
+    // CPU collision with walls (simple)
+    const cpuNearest = nearestCenterPoint(cpu.position);
+    const cpuCenterPoint = cpuNearest.point;
+    const cpuTangent2 = spline.getTangentAt(cpuNearest.t).normalize();
+    const cpuBin = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), cpuTangent2).normalize();
+    const cpuLat = cpu.position.clone().sub(cpuCenterPoint).dot(cpuBin);
+    if(Math.abs(cpuLat) > halfRoad){
+      const push = (Math.abs(cpuLat) - halfRoad);
+      const dir = cpuLat > 0 ? -1 : 1;
+      cpu.position.add(cpuBin.clone().multiplyScalar(dir * push));
+    }
+
+    // --- Camera smoothing ---
+    const camOffset = new THREE.Vector3(0, 4.2, 10).applyQuaternion(player.quaternion);
+    const desiredCam = player.position.clone().add(camOffset);
+    camera.position.lerp(desiredCam, Math.min(1, 6 * dt));
+    camera.lookAt(player.position.clone().add(new THREE.Vector3(0,0.6,0)));
+
+    // --- HUD updates ---
+    info.innerHTML = `<b>Pos</b> ${player.position.x.toFixed(1)}, ${player.position.z.toFixed(1)} &nbsp; <b>Speed</b> ${(playerState.speed*60).toFixed(1)}`;
+    raceInfo.innerHTML = `CPU Speed ${(cpuState.speed*60).toFixed(1)} &nbsp; CPU t ${(cpuState.t).toFixed(3)}`;
+
+    renderer.render(scene, camera);
+    requestAnimationFrame(update);
+  }
+
+  update();
+
+  // ====== Resize ======
+  window.addEventListener('resize', ()=> {
+    camera.aspect = innerWidth/innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  });
+
+  // ====== Small tuning helpers (console) ======
+  window.__racer = { playerState, cpuState, respawnPlayerToNearest, placeAtT, player, cpu, spline };
+
+  </script>
 </body>
 </html>
