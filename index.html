@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>3D Racer Improved</title>
+  <title>3D Racer Fixed</title>
   <style>
     body{margin:0;overflow:hidden;background:#111}
     #ui{position:fixed;left:0;right:0;bottom:12px;display:flex;justify-content:center;gap:12px;pointer-events:none;z-index:10}
@@ -15,7 +15,7 @@
   </style>
 </head>
 <body>
-<div id="info"><b>Position</b> 0,0 &nbsp; <b>Speed</b> 0</div>
+<div id="info"><b>Pos</b> 0,0 &nbsp; <b>Speed</b> 0</div>
 <div id="ui">
   <div id="left" class="btn">◀</div>
   <div id="forward" class="btn">▲</div>
@@ -23,7 +23,6 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/three@0.154.0/examples/js/controls/OrbitControls.js"></script>
 <script>
 /* ===== Scene Setup ===== */
 const scene = new THREE.Scene();
@@ -46,7 +45,6 @@ dir.shadow.mapSize.set(1024,1024);
 scene.add(dir);
 
 /* ===== Track Spline and Road ===== */
-// Define control points for a looping track
 const points = [
   new THREE.Vector3(0,0,0),
   new THREE.Vector3(12,0,-6),
@@ -56,11 +54,10 @@ const points = [
   new THREE.Vector3(-18,0,2),
   new THREE.Vector3(-10,0,-12),
   new THREE.Vector3(4,0,-18),
-  new THREE.Vector3(12,0,-6) // close loop
+  new THREE.Vector3(12,0,-6)
 ];
 const spline = new THREE.CatmullRomCurve3(points, true, 'catmullrom', 0.5);
 
-// Create road geometry by sampling the spline and building quads
 function buildRoad(curve, width, segments){
   const verts = [];
   const indices = [];
@@ -163,34 +160,32 @@ makeCar();
 car.position.set(0,0.5, -6);
 scene.add(car);
 
-/* ===== Physics State ===== */
+/* ===== Physics State (fixed, scalar speed) ===== */
 const state = {
-  velocity: new THREE.Vector3(0,0,0),
+  speed: 0,               // scalar forward speed
   forwardInput: 0,
   turnInput: 0,
-  maxSpeed: 0.6,        // tune for feel
-  accel: 0.015,
-  brake: 0.03,
-  friction: 0.01,
-  turnSpeed: 0.035
+  maxSpeed: 1.2,          // tune for feel
+  accel: 0.02,
+  brake: 0.06,
+  friction: 0.015,
+  turnSpeed: 0.045
 };
 
-/* ===== Collision Helpers ===== */
-// Precompute centerline samples for quick nearest point checks
+/* ===== Precompute centerline samples for collision ===== */
 const centerSamples = [];
 const centerCount = 800;
 for(let i=0;i<centerCount;i++){
   const t = i/centerCount;
-  centerSamples.push(spline.getPointAt(t));
+  centerSamples.push({t: t, p: spline.getPointAt(t)});
 }
 function nearestCenterPoint(pos){
-  // coarse nearest by sampling; good enough for arcade collision
-  let best = null, bestDist = Infinity, bestT = 0;
+  let best = null, bestDist = Infinity;
   for(let i=0;i<centerSamples.length;i++){
-    const d = pos.distanceToSquared(centerSamples[i]);
-    if(d < bestDist){ bestDist = d; best = centerSamples[i]; bestT = i/centerSamples.length; }
+    const d = pos.distanceToSquared(centerSamples[i].p);
+    if(d < bestDist){ bestDist = d; best = centerSamples[i]; }
   }
-  return {point: best, t: bestT, distSqr: bestDist};
+  return {point: best.p.clone(), t: best.t, distSqr: bestDist};
 }
 
 /* ===== Controls (keyboard + touch) ===== */
@@ -220,58 +215,57 @@ bindTouch(leftBtn, ()=>state.turnInput = 1, ()=>{ if(state.turnInput===1) state.
 bindTouch(rightBtn, ()=>state.turnInput = -1, ()=>{ if(state.turnInput===-1) state.turnInput = 0; });
 bindTouch(forwardBtn, ()=>state.forwardInput = 1, ()=>state.forwardInput = 0);
 
-/* ===== HUD update ===== */
+/* ===== HUD ===== */
 const info = document.getElementById('info');
 
-/* ===== Main Loop ===== */
+/* ===== Main Loop (fixed, reliable movement) ===== */
 let last = performance.now();
 function update(){
   const now = performance.now();
   const dt = Math.min(0.05, (now - last)/1000);
   last = now;
 
-  // Forward/back acceleration
+  // Acceleration / braking
   if(state.forwardInput > 0){
-    state.velocity.add(car.localToWorld(new THREE.Vector3(0,0,-1)).sub(car.position).normalize().multiplyScalar(state.accel));
+    state.speed += state.accel;
   } else if(state.forwardInput < 0){
-    // braking / reverse
-    state.velocity.add(car.localToWorld(new THREE.Vector3(0,0,1)).sub(car.position).normalize().multiplyScalar(state.brake));
+    state.speed -= state.brake;
   } else {
     // natural friction
-    state.velocity.multiplyScalar(1 - state.friction);
+    if(state.speed > 0) state.speed = Math.max(0, state.speed - state.friction);
+    else state.speed = Math.min(0, state.speed + state.friction);
   }
 
   // Clamp speed
-  const speed = state.velocity.length();
-  if(speed > state.maxSpeed) state.velocity.setLength(state.maxSpeed);
+  state.speed = Math.max(-state.maxSpeed*0.5, Math.min(state.maxSpeed, state.speed));
 
-  // Steering: rotate car based on input and current forward speed
-  const forwardSpeed = state.velocity.dot(new THREE.Vector3(0,0,-1).applyQuaternion(car.quaternion));
-  const turnFactor = (Math.sign(forwardSpeed) || 1) * (Math.min(1, Math.abs(forwardSpeed)/state.maxSpeed));
-  car.rotation.y += state.turnInput * state.turnSpeed * turnFactor;
+  // Steering: scale by speed magnitude so turning is meaningful only when moving
+  const speedFactor = Math.min(1, Math.abs(state.speed) / state.maxSpeed);
+  car.rotation.y += state.turnInput * state.turnSpeed * speedFactor;
 
-  // Integrate position
-  car.position.add(state.velocity.clone());
+  // Move car forward along its local -Z
+  const forwardVec = new THREE.Vector3(0,0,-1).applyQuaternion(car.quaternion);
+  car.position.add(forwardVec.multiplyScalar(state.speed));
 
-  // Collision with walls: compute nearest centerline and lateral offset
+  // Keep car at fixed height
+  car.position.y = 0.5;
+
+  // Collision with walls: nearest centerline and lateral offset
   const nearest = nearestCenterPoint(car.position);
   const center = nearest.point;
-  // compute tangent at nearest t for local binormal
-  const tangent = spline.getTangentAt(nearest.t);
+  const tangent = spline.getTangentAt(nearest.t).normalize();
   const binormal = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), tangent).normalize();
   const lateral = car.position.clone().sub(center).dot(binormal);
   const halfRoad = roadWidth*0.5 - 0.35; // margin inside walls
+
   if(Math.abs(lateral) > halfRoad){
-    // push back inside and damp velocity
+    // push back inside smoothly
     const push = (Math.abs(lateral) - halfRoad);
     const dir = lateral > 0 ? -1 : 1;
     car.position.add(binormal.clone().multiplyScalar(dir * push));
-    // reduce forward speed on collision
-    state.velocity.multiplyScalar(0.4);
+    // reduce speed on collision to avoid sticking
+    state.speed *= 0.35;
   }
-
-  // Keep car above ground
-  car.position.y = 0.5;
 
   // Camera follow (smooth)
   const camOffset = new THREE.Vector3(0,4,10).applyQuaternion(car.quaternion);
@@ -280,7 +274,7 @@ function update(){
   camera.lookAt(car.position.clone().add(new THREE.Vector3(0,0.6,0)));
 
   // HUD
-  info.innerHTML = `<b>Pos</b> ${car.position.x.toFixed(1)}, ${car.position.z.toFixed(1)} &nbsp; <b>Speed</b> ${(state.velocity.length()*60).toFixed(1)}`;
+  info.innerHTML = `<b>Pos</b> ${car.position.x.toFixed(1)}, ${car.position.z.toFixed(1)} &nbsp; <b>Speed</b> ${(state.speed*60).toFixed(1)}`;
 
   renderer.render(scene, camera);
   requestAnimationFrame(update);
