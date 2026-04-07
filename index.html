@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>3D Racer Fixed</title>
+  <title>3D Racer Safe Start</title>
   <style>
     body{margin:0;overflow:hidden;background:#111}
     #ui{position:fixed;left:0;right:0;bottom:12px;display:flex;justify-content:center;gap:12px;pointer-events:none;z-index:10}
@@ -157,22 +157,21 @@ function makeCar(){
   });
 }
 makeCar();
-car.position.set(0,0.5, -6);
 scene.add(car);
 
-/* ===== Physics State (fixed, scalar speed) ===== */
+/* ===== Physics State (scalar speed) ===== */
 const state = {
-  speed: 0,               // scalar forward speed
+  speed: 0,
   forwardInput: 0,
   turnInput: 0,
-  maxSpeed: 1.2,          // tune for feel
+  maxSpeed: 1.2,
   accel: 0.02,
   brake: 0.06,
   friction: 0.015,
   turnSpeed: 0.045
 };
 
-/* ===== Precompute centerline samples for collision ===== */
+/* ===== Precompute centerline samples for collision and respawn ===== */
 const centerSamples = [];
 const centerCount = 800;
 for(let i=0;i<centerCount;i++){
@@ -188,12 +187,43 @@ function nearestCenterPoint(pos){
   return {point: best.p.clone(), t: best.t, distSqr: bestDist};
 }
 
+/* ===== Safe placement and respawn helpers ===== */
+// Choose a starting t along the spline (0..1)
+const startT = 0.02;
+
+function placeCarAtT(t, backwardOffset = 4.0) {
+  const center = spline.getPointAt(t);
+  const tangent = spline.getTangentAt(t).normalize();
+  const forward = tangent.clone().multiplyScalar(-1);
+  const pos = center.clone().add(forward.clone().multiplyScalar(backwardOffset));
+  car.position.copy(pos);
+  car.position.y = 0.5;
+  const lookAt = center.clone();
+  car.lookAt(lookAt.x, lookAt.y, lookAt.z);
+  state.speed = 0;
+}
+
+// initial safe placement
+placeCarAtT(startT);
+
+function respawnToNearestCenter() {
+  let bestIdx = 0;
+  let bestDist = Infinity;
+  for (let i = 0; i < centerSamples.length; i++) {
+    const d = car.position.distanceToSquared(centerSamples[i].p);
+    if (d < bestDist) { bestDist = d; bestIdx = i; }
+  }
+  const t = centerSamples[bestIdx].t;
+  placeCarAtT(t, 4.0);
+}
+
 /* ===== Controls (keyboard + touch) ===== */
 window.addEventListener('keydown', e=>{
   if(e.key === 'w' || e.key === 'ArrowUp') state.forwardInput = 1;
   if(e.key === 's' || e.key === 'ArrowDown') state.forwardInput = -1;
   if(e.key === 'a' || e.key === 'ArrowLeft') state.turnInput = 1;
   if(e.key === 'd' || e.key === 'ArrowRight') state.turnInput = -1;
+  if(e.key === 'r' || e.key === 'R') respawnToNearestCenter();
 });
 window.addEventListener('keyup', e=>{
   if(e.key === 'w' || e.key === 'ArrowUp' || e.key === 's' || e.key === 'ArrowDown') state.forwardInput = 0;
@@ -215,10 +245,22 @@ bindTouch(leftBtn, ()=>state.turnInput = 1, ()=>{ if(state.turnInput===1) state.
 bindTouch(rightBtn, ()=>state.turnInput = -1, ()=>{ if(state.turnInput===-1) state.turnInput = 0; });
 bindTouch(forwardBtn, ()=>state.forwardInput = 1, ()=>state.forwardInput = 0);
 
+// two-finger tap to respawn
+let touchStartCount = 0;
+window.addEventListener('touchstart', (e) => {
+  touchStartCount = e.touches.length;
+  if (touchStartCount >= 2) {
+    setTimeout(() => {
+      if (touchStartCount >= 2) respawnToNearestCenter();
+    }, 120);
+  }
+});
+window.addEventListener('touchend', () => { touchStartCount = 0; });
+
 /* ===== HUD ===== */
 const info = document.getElementById('info');
 
-/* ===== Main Loop (fixed, reliable movement) ===== */
+/* ===== Main Loop ===== */
 let last = performance.now();
 function update(){
   const now = performance.now();
@@ -231,7 +273,6 @@ function update(){
   } else if(state.forwardInput < 0){
     state.speed -= state.brake;
   } else {
-    // natural friction
     if(state.speed > 0) state.speed = Math.max(0, state.speed - state.friction);
     else state.speed = Math.min(0, state.speed + state.friction);
   }
@@ -239,35 +280,33 @@ function update(){
   // Clamp speed
   state.speed = Math.max(-state.maxSpeed*0.5, Math.min(state.maxSpeed, state.speed));
 
-  // Steering: scale by speed magnitude so turning is meaningful only when moving
+  // Steering scaled by speed
   const speedFactor = Math.min(1, Math.abs(state.speed) / state.maxSpeed);
   car.rotation.y += state.turnInput * state.turnSpeed * speedFactor;
 
-  // Move car forward along its local -Z
+  // Move forward along local -Z
   const forwardVec = new THREE.Vector3(0,0,-1).applyQuaternion(car.quaternion);
   car.position.add(forwardVec.multiplyScalar(state.speed));
 
   // Keep car at fixed height
   car.position.y = 0.5;
 
-  // Collision with walls: nearest centerline and lateral offset
+  // Collision with walls
   const nearest = nearestCenterPoint(car.position);
   const center = nearest.point;
   const tangent = spline.getTangentAt(nearest.t).normalize();
   const binormal = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), tangent).normalize();
   const lateral = car.position.clone().sub(center).dot(binormal);
-  const halfRoad = roadWidth*0.5 - 0.35; // margin inside walls
+  const halfRoad = roadWidth*0.5 - 0.35;
 
   if(Math.abs(lateral) > halfRoad){
-    // push back inside smoothly
     const push = (Math.abs(lateral) - halfRoad);
     const dir = lateral > 0 ? -1 : 1;
     car.position.add(binormal.clone().multiplyScalar(dir * push));
-    // reduce speed on collision to avoid sticking
     state.speed *= 0.35;
   }
 
-  // Camera follow (smooth)
+  // Camera follow
   const camOffset = new THREE.Vector3(0,4,10).applyQuaternion(car.quaternion);
   const desired = car.position.clone().add(camOffset);
   camera.position.lerp(desired, 0.12);
