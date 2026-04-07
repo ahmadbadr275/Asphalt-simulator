@@ -1,38 +1,43 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Racer — Smooth, Multi Track</title>
-
-<!-- Three.js -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Racer Max</title>
 <script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
-
 <style>
   :root{
-    --ui-bg: rgba(6,10,20,0.6);
-    --accent: #ff5a5a;
+    --ui-bg: rgba(6,10,20,0.7);
+    --accent: #ff4d4d;
     --muted: #cbd5e1;
   }
-  html,body{height:100%;margin:0;background:#071028;color:#fff;font-family:Inter,system-ui,Arial}
-  #canvas-wrap{position:fixed;inset:0;display:block;overflow:hidden}
+  html,body{margin:0;height:100%;background:#020617;color:#e5e7eb;font-family:system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif}
+  #canvas-wrap{position:fixed;inset:0;overflow:hidden}
   canvas{display:block;width:100%;height:100%}
-  /* Top UI */
-  .topbar{position:fixed;left:12px;right:12px;top:12px;display:flex;gap:12px;align-items:center;z-index:40}
-  .panel{background:var(--ui-bg);backdrop-filter:blur(6px);padding:8px;border-radius:8px;display:flex;gap:8px;align-items:center}
-  select,input[type="color"],button{background:transparent;border:1px solid rgba(255,255,255,0.06);color:var(--muted);padding:6px 8px;border-radius:6px}
+  .topbar{position:fixed;left:12px;right:12px;top:12px;display:flex;flex-wrap:wrap;gap:8px;z-index:30}
+  .panel{background:var(--ui-bg);backdrop-filter:blur(8px);padding:8px 10px;border-radius:10px;display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  label{font-size:12px;color:var(--muted)}
+  select,button,input[type="color"]{
+    background:rgba(15,23,42,0.8);
+    border:1px solid rgba(148,163,184,0.4);
+    color:#e5e7eb;
+    padding:4px 8px;
+    border-radius:6px;
+    font-size:13px;
+  }
   button{cursor:pointer}
-  .small{font-size:13px;color:var(--muted)}
-  /* Bottom controls (mobile) */
-  #controls{position:fixed;left:0;right:0;bottom:12px;display:flex;justify-content:center;gap:12px;z-index:40;pointer-events:none}
-  .btn{width:72px;height:72px;border-radius:12px;background:linear-gradient(180deg,rgba(255,255,255,0.04),rgba(0,0,0,0.25));color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;pointer-events:auto;user-select:none}
+  #hud{position:fixed;right:12px;top:12px;background:var(--ui-bg);backdrop-filter:blur(8px);padding:8px 10px;border-radius:10px;font-size:13px;z-index:30}
+  #hud div{margin-bottom:2px}
+  #hud div:last-child{margin-bottom:0}
+  #controls{position:fixed;left:0;right:0;bottom:12px;display:flex;justify-content:center;gap:12px;pointer-events:none;z-index:30}
+  .btn{width:72px;height:72px;border-radius:16px;background:linear-gradient(180deg,rgba(255,255,255,0.06),rgba(15,23,42,0.9));color:#f9fafb;display:flex;align-items:center;justify-content:center;font-size:22px;pointer-events:auto;user-select:none;box-shadow:0 8px 20px rgba(0,0,0,0.45)}
   #btn-left{transform:translateX(-10px)} #btn-right{transform:translateX(10px)}
-  #btn-forward{width:120px;border-radius:18px}
-  /* Right HUD */
-  .hud{position:fixed;right:12px;top:12px;background:var(--ui-bg);padding:8px;border-radius:8px;font-size:13px;z-index:40}
-  .muted{color:var(--muted)}
-  /* small responsive */
-  @media (max-width:600px){
+  #btn-forward{width:120px;border-radius:20px}
+  #lights{position:fixed;top:20px;left:50%;transform:translateX(-50%);display:flex;gap:10px;z-index:40}
+  .light{width:32px;height:32px;border-radius:50%;background:#1f2933;box-shadow:0 0 10px rgba(0,0,0,0.7);border:2px solid #111827}
+  .light.on{background:#ef4444;box-shadow:0 0 18px #f97373}
+  .banner{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:12px 18px;border-radius:999px;background:rgba(15,23,42,0.9);backdrop-filter:blur(10px);color:#f9fafb;font-size:18px;z-index:50;display:none}
+  @media (max-width:640px){
     .topbar{flex-direction:column;align-items:flex-start}
   }
 </style>
@@ -40,50 +45,58 @@
 <body>
 <div id="canvas-wrap"></div>
 
+<div id="lights">
+  <div class="light" id="l1"></div>
+  <div class="light" id="l2"></div>
+  <div class="light" id="l3"></div>
+  <div class="light" id="l4"></div>
+  <div class="light" id="l5"></div>
+</div>
+
+<div class="banner" id="bannerText">GO!</div>
+
 <div class="topbar">
   <div class="panel">
-    <label class="small muted">Track</label>
-    <select id="trackSelect" title="Choose track">
+    <label>Track</label>
+    <select id="trackSelect">
       <option value="classic">Classic Loop</option>
       <option value="figure8">Figure Eight</option>
-      <option value="stadium">Stadium Circuit</option>
+      <option value="stadium">Stadium</option>
     </select>
-    <label class="small muted">Car</label>
+    <label>Car</label>
     <select id="carSelect">
       <option value="red">Red</option>
       <option value="blue">Blue</option>
       <option value="green">Green</option>
       <option value="yellow">Yellow</option>
     </select>
-    <label class="small muted">Color</label>
-    <input id="colorPicker" type="color" value="#ff4d4d" />
+    <label>Color</label>
+    <input id="colorPicker" type="color" value="#ff4d4d">
     <button id="startBtn">Start</button>
     <button id="pauseBtn">Pause</button>
     <button id="resetBtn">Reset</button>
   </div>
-
   <div class="panel">
-    <label class="small muted">AI Count</label>
+    <label>AI Cars</label>
     <select id="aiCount">
       <option value="1">1</option>
       <option value="2" selected>2</option>
       <option value="3">3</option>
       <option value="4">4</option>
     </select>
-    <label class="small muted">Physics</label>
-    <select id="physMode">
-      <option value="arcade" selected>Arcade</option>
-      <option value="realistic">Realistic-ish</option>
+    <label>Laps</label>
+    <select id="lapCount">
+      <option value="1">1</option>
+      <option value="3" selected>3</option>
+      <option value="5">5</option>
     </select>
-    <label class="small muted">Debug</label>
-    <input id="debugToggle" type="checkbox" />
   </div>
 </div>
 
-<div class="hud" id="hud">
-  <div id="lapInfo">Lap: 0 / 3</div>
-  <div id="posInfo">Pos: 1</div>
-  <div id="speedInfo">Speed: 0</div>
+<div id="hud">
+  <div id="hudLap">Lap: 0 / 3</div>
+  <div id="hudPos">Pos: 1 / 1</div>
+  <div id="hudSpeed">Speed: 0</div>
 </div>
 
 <div id="controls">
@@ -93,111 +106,131 @@
 </div>
 
 <script>
-/* ============================================================
-   High-quality racer: single-file, optimized, multi-track, multi-car
-   ============================================================ */
-
-/* -------------------------
-   Utility / small alloc pool
-   ------------------------- */
+/* ===== Short aliases ===== */
 const V3 = THREE.Vector3;
 const Q = THREE.Quaternion;
-const tmpV = new V3();
-const tmpV2 = new V3();
-const tmpQ = new Q();
 
-/* -------------------------
-   Renderer, scene, camera
-   ------------------------- */
+/* ===== Renderer, scene, camera ===== */
 const container = document.getElementById('canvas-wrap');
-const renderer = new THREE.WebGLRenderer({antialias:true, alpha:false});
+const renderer = new THREE.WebGLRenderer({antialias:true});
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
 container.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x87c0ff, 0.0006);
+scene.background = new THREE.Color(0x87ceeb);
+scene.fog = new THREE.FogExp2(0x87ceeb, 0.0006);
 
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth/window.innerHeight, 0.1, 1000);
-camera.position.set(0, 6, 14);
+camera.position.set(0,6,14);
 
-/* lights */
-const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 0.9);
+/* ===== Lights ===== */
+const hemi = new THREE.HemisphereLight(0xffffff, 0x445566, 0.9);
 scene.add(hemi);
 const sun = new THREE.DirectionalLight(0xffffff, 0.9);
-sun.position.set(10, 20, 10);
+sun.position.set(20,30,10);
 sun.castShadow = true;
 sun.shadow.mapSize.set(1024,1024);
-sun.shadow.camera.left = -40; sun.shadow.camera.right = 40; sun.shadow.camera.top = 40; sun.shadow.camera.bottom = -40;
+sun.shadow.camera.left = -60;
+sun.shadow.camera.right = 60;
+sun.shadow.camera.top = 60;
+sun.shadow.camera.bottom = -60;
 scene.add(sun);
 
-/* -------------------------
-   Track generation helpers
-   ------------------------- */
-function makeSplineFromPoints(points, closed=true){
+/* ===== Ground & scenery ===== */
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(1000,1000),
+  new THREE.MeshStandardMaterial({color:0x14532d})
+);
+ground.rotation.x = -Math.PI/2;
+ground.position.y = -0.02;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const hills = new THREE.Group();
+for(let i=0;i<12;i++){
+  const g = new THREE.Mesh(
+    new THREE.ConeGeometry(10+Math.random()*20, 30+Math.random()*40, 8),
+    new THREE.MeshStandardMaterial({color:0x166534})
+  );
+  g.position.set((Math.random()-0.5)*600, -4, -200 - Math.random()*400);
+  g.rotation.y = Math.random()*Math.PI;
+  hills.add(g);
+}
+scene.add(hills);
+
+/* ===== Track builders ===== */
+function makeSpline(points, closed=true){
   return new THREE.CatmullRomCurve3(points, closed, 'catmullrom', 0.5);
 }
-
-/* Prebuilt track factories */
-function buildClassicLoop(){
+function buildClassic(){
   const pts = [
     new V3(0,0,0),
-    new V3(12,0,-6),
-    new V3(20,0,6),
-    new V3(8,0,18),
-    new V3(-10,0,14),
-    new V3(-18,0,2),
-    new V3(-10,0,-12),
-    new V3(4,0,-18),
-    new V3(12,0,-6)
+    new V3(20,0,-10),
+    new V3(35,0,8),
+    new V3(18,0,22),
+    new V3(-10,0,18),
+    new V3(-30,0,4),
+    new V3(-18,0,-16),
+    new V3(0,0,-22),
+    new V3(20,0,-10)
   ];
-  return makeSplineFromPoints(pts, true);
+  return makeSpline(pts,true);
 }
 function buildFigure8(){
   const pts = [];
-  const r = 18;
-  for(let i=0;i<16;i++){
-    const a = i/16*Math.PI*2;
-    const x = Math.cos(a)*r + Math.sin(a)*r*0.25;
+  const r = 22;
+  for(let i=0;i<20;i++){
+    const a = i/20*Math.PI*2;
+    const x = Math.cos(a)*r + Math.sin(a)*r*0.4;
     const z = Math.sin(a)*r;
     pts.push(new V3(x,0,z));
   }
-  return makeSplineFromPoints(pts, true);
+  return makeSpline(pts,true);
 }
 function buildStadium(){
   const pts = [];
-  const w = 28, h = 12;
+  const w = 30, h = 14;
   for(let i=0;i<32;i++){
     const a = i/32*Math.PI*2;
-    const x = Math.cos(a)*w + Math.sin(a)*h*0.3;
+    const x = Math.cos(a)*w + Math.sin(a)*h*0.2;
     const z = Math.sin(a)*h + Math.cos(a)*w*0.1;
     pts.push(new V3(x,0,z));
   }
-  return makeSplineFromPoints(pts, true);
+  return makeSpline(pts,true);
 }
 
-/* Road mesh builder (reuses buffer geometry) */
-function buildRoadMesh(spline, width=6.5, segments=600){
+/* ===== Road & walls ===== */
+let spline = buildClassic();
+let roadMesh = null;
+let wallsGroup = null;
+let centerLine = null;
+let centerSamples = [];
+let checkpoints = [];
+let startFinishT = 0; // where start/finish line is on spline
+
+function buildRoad(spline, width=7, segments=800){
+  if(roadMesh) scene.remove(roadMesh);
   const positions = new Float32Array((segments+1)*2*3);
   const uvs = new Float32Array((segments+1)*2*2);
   const indices = new Uint32Array(segments*6);
-  let posIdx = 0, uvIdx = 0, idxIdx = 0;
+  let pi=0, ui=0, ii=0;
   for(let i=0;i<=segments;i++){
     const t = i/segments;
     const p = spline.getPointAt(t);
-    const tangent = spline.getTangentAt(t).normalize();
-    const bin = new V3().crossVectors(new V3(0,1,0), tangent).normalize();
+    const tan = spline.getTangentAt(t).normalize();
+    const bin = new V3().crossVectors(new V3(0,1,0), tan).normalize();
     const left = p.clone().add(bin.clone().multiplyScalar(-width*0.5));
     const right = p.clone().add(bin.clone().multiplyScalar(width*0.5));
-    positions[posIdx++] = left.x; positions[posIdx++] = left.y+0.01; positions[posIdx++] = left.z;
-    positions[posIdx++] = right.x; positions[posIdx++] = right.y+0.01; positions[posIdx++] = right.z;
-    uvs[uvIdx++] = t; uvs[uvIdx++] = 0;
-    uvs[uvIdx++] = t; uvs[uvIdx++] = 1;
+    positions[pi++] = left.x; positions[pi++] = left.y+0.01; positions[pi++] = left.z;
+    positions[pi++] = right.x; positions[pi++] = right.y+0.01; positions[pi++] = right.z;
+    uvs[ui++] = t; uvs[ui++] = 0;
+    uvs[ui++] = t; uvs[ui++] = 1;
     if(i<segments){
       const a = i*2, b = i*2+1, c = (i+1)*2, d = (i+1)*2+1;
-      indices[idxIdx++] = a; indices[idxIdx++] = b; indices[idxIdx++] = c;
-      indices[idxIdx++] = b; indices[idxIdx++] = d; indices[idxIdx++] = c;
+      indices[ii++] = a; indices[ii++] = b; indices[ii++] = c;
+      indices[ii++] = b; indices[ii++] = d; indices[ii++] = c;
     }
   }
   const geo = new THREE.BufferGeometry();
@@ -205,64 +238,37 @@ function buildRoadMesh(spline, width=6.5, segments=600){
   geo.setAttribute('uv', new THREE.BufferAttribute(uvs,2));
   geo.setIndex(new THREE.BufferAttribute(indices,1));
   geo.computeVertexNormals();
-  const mat = new THREE.MeshStandardMaterial({color:0x2b2b2b, roughness:0.95, metalness:0.02});
-  const mesh = new THREE.Mesh(geo, mat);
-  mesh.receiveShadow = true;
-  return mesh;
+  const mat = new THREE.MeshStandardMaterial({color:0x1f2933, roughness:0.95, metalness:0.02});
+  roadMesh = new THREE.Mesh(geo, mat);
+  roadMesh.receiveShadow = true;
+  scene.add(roadMesh);
 }
-
-/* Walls builder (group of boxes) */
-function buildWalls(spline, roadWidth=6.5, samples=300){
-  const group = new THREE.Group();
+function buildWalls(spline, width=7, samples=300){
+  if(wallsGroup) scene.remove(wallsGroup);
+  wallsGroup = new THREE.Group();
   const wallHeight = 1.2, wallThickness = 0.6;
-  const segLen = spline.getLength()/samples;
-  const mat = new THREE.MeshStandardMaterial({color:0x111111});
+  const len = spline.getLength();
+  const segLen = len/samples;
+  const mat = new THREE.MeshStandardMaterial({color:0x020617});
   for(let i=0;i<samples;i++){
     const t = i/samples;
     const p = spline.getPointAt(t);
-    const tangent = spline.getTangentAt(t).normalize();
-    const bin = new V3().crossVectors(new V3(0,1,0), tangent).normalize();
-    const leftPos = p.clone().add(bin.clone().multiplyScalar(-roadWidth*0.5 - wallThickness*0.5));
-    const rightPos = p.clone().add(bin.clone().multiplyScalar(roadWidth*0.5 + wallThickness*0.5));
-    const leftWall = new THREE.Mesh(new THREE.BoxGeometry(wallThickness, wallHeight, segLen*1.05), mat);
+    const tan = spline.getTangentAt(t).normalize();
+    const bin = new V3().crossVectors(new V3(0,1,0), tan).normalize();
+    const leftPos = p.clone().add(bin.clone().multiplyScalar(-width*0.5 - wallThickness*0.5));
+    const rightPos = p.clone().add(bin.clone().multiplyScalar(width*0.5 + wallThickness*0.5));
+    const wallGeo = new THREE.BoxGeometry(wallThickness, wallHeight, segLen*1.05);
+    const leftWall = new THREE.Mesh(wallGeo, mat);
     leftWall.position.copy(leftPos); leftWall.position.y = wallHeight*0.5;
-    leftWall.lookAt(p.clone().add(tangent));
+    leftWall.lookAt(p.clone().add(tan));
     leftWall.castShadow = true;
-    group.add(leftWall);
+    wallsGroup.add(leftWall);
     const rightWall = leftWall.clone();
     rightWall.position.copy(rightPos); rightWall.position.y = wallHeight*0.5;
-    group.add(rightWall);
+    wallsGroup.add(rightWall);
   }
-  return group;
+  scene.add(wallsGroup);
 }
-
-/* -------------------------
-   Scene setup helpers
-   ------------------------- */
-let currentTrack = 'classic';
-let spline = buildClassicLoop();
-let roadMesh = buildRoadMesh(spline);
-let wallsGroup = buildWalls(spline);
-scene.add(roadMesh);
-scene.add(wallsGroup);
-
-/* ground and scenery */
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(1200,1200), new THREE.MeshStandardMaterial({color:0x2d7a2d}));
-ground.rotation.x = -Math.PI/2; ground.position.y = -0.01; ground.receiveShadow = true;
-scene.add(ground);
-
-/* distant hills */
-const hills = new THREE.Group();
-for(let i=0;i<10;i++){
-  const g = new THREE.Mesh(new THREE.ConeGeometry(8 + Math.random()*18, 20 + Math.random()*40, 8), new THREE.MeshStandardMaterial({color:0x1f6b2b}));
-  g.position.set((Math.random()-0.5)*600, -2, -200 - Math.random()*400);
-  g.rotation.y = Math.random()*Math.PI;
-  hills.add(g);
-}
-scene.add(hills);
-
-/* road center dashed line */
-let centerLine = null;
 function buildCenterLine(spline){
   if(centerLine) scene.remove(centerLine);
   const pts = [];
@@ -272,27 +278,18 @@ function buildCenterLine(spline){
     pts.push(new V3(p.x, p.y+0.02, p.z));
   }
   const geo = new THREE.BufferGeometry().setFromPoints(pts);
-  const mat = new THREE.LineDashedMaterial({color:0xfff1a8, dashSize:0.6, gapSize:0.6, linewidth:1});
+  const mat = new THREE.LineDashedMaterial({color:0xfacc15, dashSize:0.8, gapSize:0.8});
   centerLine = new THREE.Line(geo, mat);
   centerLine.computeLineDistances();
   scene.add(centerLine);
 }
-buildCenterLine(spline);
-
-/* -------------------------
-   Precompute center samples for collision & checkpoints
-   ------------------------- */
-let centerSamples = [];
 function buildCenterSamples(spline, count=1200){
   centerSamples = new Array(count);
   for(let i=0;i<count;i++){
     const t = i/count;
-    centerSamples[i] = {t: t, p: spline.getPointAt(t)};
+    centerSamples[i] = {t, p: spline.getPointAt(t)};
   }
 }
-buildCenterSamples(spline);
-
-/* nearest centerpoint (fast coarse+refine) */
 function nearestCenterPoint(pos){
   let best = null, bestDist = Infinity, bestIdx = 0;
   const step = 4;
@@ -300,129 +297,122 @@ function nearestCenterPoint(pos){
     const d = pos.distanceToSquared(centerSamples[i].p);
     if(d < bestDist){ bestDist = d; best = centerSamples[i]; bestIdx = i; }
   }
-  const start = Math.max(0, bestIdx - 24);
-  const end = Math.min(centerSamples.length-1, bestIdx + 24);
+  const start = Math.max(0, bestIdx-24);
+  const end = Math.min(centerSamples.length-1, bestIdx+24);
   for(let i=start;i<=end;i++){
     const d = pos.distanceToSquared(centerSamples[i].p);
     if(d < bestDist){ bestDist = d; best = centerSamples[i]; }
   }
-  return {point: best.p.clone(), t: best.t, distSqr: bestDist};
+  return {point: best.p.clone(), t: best.t};
 }
 
-/* -------------------------
-   Car factory & pooling
-   ------------------------- */
-function makeCarMesh(color='#ff4d4d'){
-  const group = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(1.8,0.5,3.2), new THREE.MeshStandardMaterial({color:color, metalness:0.2, roughness:0.4}));
-  body.position.y = 0.45; body.castShadow = true; group.add(body);
-  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.2,0.45,1.2), new THREE.MeshStandardMaterial({color:0x111111, metalness:0.1, roughness:0.2}));
-  cabin.position.set(0,0.85,-0.1); cabin.castShadow = true; group.add(cabin);
-  const wheelGeo = new THREE.CylinderGeometry(0.35,0.35,0.4,16); wheelGeo.rotateZ(Math.PI/2);
-  const wheelMat = new THREE.MeshStandardMaterial({color:0x0b0b0b});
-  const offsets = [[0.9,0.25,1.05],[-0.9,0.25,1.05],[0.9,0.25,-1.05],[-0.9,0.25,-1.05]];
-  offsets.forEach(o=>{ const w = new THREE.Mesh(wheelGeo, wheelMat); w.position.set(o[0],o[1],o[2]); w.castShadow=true; group.add(w); });
-  return group;
+/* Start/finish line mesh */
+let startFinishMesh = null;
+function buildStartFinish(spline, t=0){
+  if(startFinishMesh) scene.remove(startFinishMesh);
+  startFinishT = t;
+  const p = spline.getPointAt(t);
+  const tan = spline.getTangentAt(t).normalize();
+  const geo = new THREE.PlaneGeometry(2,7);
+  const mat = new THREE.MeshBasicMaterial({color:0xffffff, side:THREE.DoubleSide});
+  startFinishMesh = new THREE.Mesh(geo, mat);
+  startFinishMesh.rotation.x = -Math.PI/2;
+  startFinishMesh.position.copy(p);
+  scene.add(startFinishMesh);
 }
 
-/* Car state template (bicycle-like) */
-function createCarState(params){
-  return {
-    mesh: params.mesh,
-    color: params.color || '#ff4d4d',
-    speed: 0,
-    heading: 0,
-    angularVel: 0,
-    pos: params.pos ? params.pos.clone() : new V3(),
-    steer: 0,      // -1..1
-    throttle: 0,   // -1..1
-    maxSpeed: params.maxSpeed || 1.0,
-    accel: params.accel || 1.2,
-    brake: params.brake || 2.4,
-    drag: params.drag || 1.6,
-    lateralFriction: params.lateralFriction || 6.0,
-    turnSpeed: params.turnSpeed || 3.0,
-    lap: 0,
-    lastCheckpoint: 0,
-    checkpointTimes: [],
-    ai: params.ai || false,
-    tOnSpline: params.tOnSpline || 0
-  };
-}
-
-/* Player + CPU setup */
-let playerState = null;
-let cpuStates = [];
-let allCars = [];
-
-function resetCars(aiCount=2, playerColor='#ff4d4d'){
-  // remove existing
-  allCars.forEach(c=>scene.remove(c.mesh));
-  allCars = []; cpuStates = [];
-
-  // player
-  const pmesh = makeCarMesh(playerColor);
-  scene.add(pmesh);
-  playerState = createCarState({mesh:pmesh, color:playerColor, maxSpeed:0.95, accel:1.2, brake:2.4, drag:1.6, lateralFriction:6.0, turnSpeed:3.2});
-  allCars.push(playerState);
-
-  // CPU cars
-  const colors = ['#4da6ff','#7cff7c','#ffd36b','#c27bff'];
-  for(let i=0;i<aiCount;i++){
-    const cmesh = makeCarMesh(colors[i%colors.length]);
-    scene.add(cmesh);
-    const tStart = (startT + (i+1)*0.06) % 1;
-    const cs = createCarState({mesh:cmesh, color:colors[i%colors.length], ai:true, maxSpeed:0.8 + Math.random()*0.25, accel:0.6 + Math.random()*0.6, drag:1.4, lateralFriction:5.0, turnSpeed:2.2, tOnSpline: tStart});
-    cpuStates.push(cs);
-    allCars.push(cs);
-  }
-}
-
-/* -------------------------
-   Checkpoints & laps
-   ------------------------- */
-const lapCountTarget = 3;
-let checkpoints = [];
-function buildCheckpoints(spline, count=8){
+/* Checkpoints */
+function buildCheckpoints(spline, count=12){
   checkpoints = [];
   for(let i=0;i<count;i++){
     const t = i/count;
     const p = spline.getPointAt(t);
-    checkpoints.push({t:t, p:p.clone()});
+    checkpoints.push({t, p});
   }
 }
-buildCheckpoints(spline);
 
-/* -------------------------
-   Start position helper
-   ------------------------- */
+/* ===== Car factory ===== */
+function makeCarMesh(color){
+  const group = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(1.6,0.5,3),
+    new THREE.MeshStandardMaterial({color, metalness:0.2, roughness:0.4})
+  );
+  body.position.y = 0.45;
+  body.castShadow = true;
+  group.add(body);
+  const cabin = new THREE.Mesh(
+    new THREE.BoxGeometry(1.1,0.45,1.2),
+    new THREE.MeshStandardMaterial({color:0x111827, metalness:0.1, roughness:0.2})
+  );
+  cabin.position.set(0,0.85,-0.1);
+  cabin.castShadow = true;
+  group.add(cabin);
+  const wheelGeo = new THREE.CylinderGeometry(0.35,0.35,0.4,16);
+  wheelGeo.rotateZ(Math.PI/2);
+  const wheelMat = new THREE.MeshStandardMaterial({color:0x020617});
+  const offsets = [[0.9,0.25,1.05],[-0.9,0.25,1.05],[0.9,0.25,-1.05],[-0.9,0.25,-1.05]];
+  offsets.forEach(o=>{
+    const w = new THREE.Mesh(wheelGeo, wheelMat);
+    w.position.set(o[0],o[1],o[2]);
+    w.castShadow = true;
+    group.add(w);
+  });
+  return group;
+}
+function createCarState(mesh, opts){
+  return {
+    mesh,
+    pos: new V3(),
+    heading: 0,
+    speed: 0,
+    angularVel: 0,
+    steer: 0,
+    throttle: 0,
+    maxSpeed: opts.maxSpeed || 1.0,
+    accel: opts.accel || 1.2,
+    brake: opts.brake || 2.4,
+    drag: opts.drag || 1.6,
+    lateralFriction: opts.lateralFriction || 6.0,
+    turnSpeed: opts.turnSpeed || 3.0,
+    ai: !!opts.ai,
+    tOnSpline: opts.tOnSpline || 0,
+    lap: 0,
+    lastCheckpoint: 0
+  };
+}
+
+/* ===== Cars ===== */
+let player = null;
+let cpuCars = [];
+let allCars = [];
 const startT = 0.02;
-function placeAtT(state, t, offsetBack=3.6){
+
+function placeCarOnSpline(state, t, back=3.5){
   const center = spline.getPointAt(t);
-  const tangent = spline.getTangentAt(t).normalize();
-  const forward = tangent.clone().multiplyScalar(-1);
-  const pos = center.clone().add(forward.clone().multiplyScalar(offsetBack));
+  const tan = spline.getTangentAt(t).normalize();
+  const forward = tan.clone().multiplyScalar(-1);
+  const pos = center.clone().add(forward.multiplyScalar(back));
   state.pos.copy(pos);
   state.mesh.position.copy(pos);
   state.mesh.position.y = 0.5;
   state.mesh.lookAt(center.x, center.y, center.z);
-  state.heading = Math.atan2(state.mesh.quaternion.y, state.mesh.quaternion.w) || 0;
-  state.speed = 0; state.angularVel = 0; state.lap = 0; state.lastCheckpoint = 0; state.checkpointTimes = [];
+  state.heading = Math.atan2(state.mesh.getWorldDirection(new V3()).x, -state.mesh.getWorldDirection(new V3()).z);
+  state.speed = 0;
+  state.angularVel = 0;
+  state.lap = 0;
+  state.lastCheckpoint = 0;
 }
 
-/* -------------------------
-   Input handling
-   ------------------------- */
+/* ===== Input ===== */
 const keys = {};
-window.addEventListener('keydown', e=>{
-  keys[e.key.toLowerCase()] = true;
-  if(e.key === 'r' || e.key === 'R') respawnPlayer();
-});
+window.addEventListener('keydown', e=>{ keys[e.key.toLowerCase()] = true; });
 window.addEventListener('keyup', e=>{ keys[e.key.toLowerCase()] = false; });
 
 const btnLeft = document.getElementById('btn-left');
 const btnRight = document.getElementById('btn-right');
 const btnForward = document.getElementById('btn-forward');
+
 function bindTouch(el, onStart, onEnd){
   el.addEventListener('touchstart', e=>{ e.preventDefault(); onStart(); }, {passive:false});
   el.addEventListener('touchend', e=>{ e.preventDefault(); onEnd(); }, {passive:false});
@@ -430,22 +420,11 @@ function bindTouch(el, onStart, onEnd){
   el.addEventListener('mouseup', e=>{ onEnd(); });
   el.addEventListener('mouseleave', e=>{ onEnd(); });
 }
-bindTouch(btnLeft, ()=>playerState.steer = -1, ()=>{ if(playerState.steer === -1) playerState.steer = 0; });
-bindTouch(btnRight, ()=>playerState.steer = +1, ()=>{ if(playerState.steer === +1) playerState.steer = 0; });
-bindTouch(btnForward, ()=>playerState.throttle = 1, ()=>{ playerState.throttle = 0; });
+bindTouch(btnLeft, ()=>player.steer=-1, ()=>{ if(player.steer===-1) player.steer=0; });
+bindTouch(btnRight, ()=>player.steer=1, ()=>{ if(player.steer===1) player.steer=0; });
+bindTouch(btnForward, ()=>player.throttle=1, ()=>{ player.throttle=0; });
 
-/* optional tilt steering (device orientation) */
-let tiltEnabled = false;
-window.addEventListener('deviceorientation', e=>{
-  if(!tiltEnabled) return;
-  const gamma = e.gamma || 0; // -90..90
-  const norm = Math.max(-1, Math.min(1, gamma/30));
-  playerState.steer = norm;
-});
-
-/* -------------------------
-   Race control UI
-   ------------------------- */
+/* ===== Race control ===== */
 const trackSelect = document.getElementById('trackSelect');
 const carSelect = document.getElementById('carSelect');
 const colorPicker = document.getElementById('colorPicker');
@@ -453,242 +432,265 @@ const startBtn = document.getElementById('startBtn');
 const pauseBtn = document.getElementById('pauseBtn');
 const resetBtn = document.getElementById('resetBtn');
 const aiCountSelect = document.getElementById('aiCount');
-const physMode = document.getElementById('physMode');
-const debugToggle = document.getElementById('debugToggle');
+const lapCountSelect = document.getElementById('lapCount');
+const hudLap = document.getElementById('hudLap');
+const hudPos = document.getElementById('hudPos');
+const hudSpeed = document.getElementById('hudSpeed');
+const lights = [
+  document.getElementById('l1'),
+  document.getElementById('l2'),
+  document.getElementById('l3'),
+  document.getElementById('l4'),
+  document.getElementById('l5')
+];
+const banner = document.getElementById('bannerText');
 
+let lapTarget = 3;
 let running = false;
 let paused = false;
+let countdownRunning = false;
+let raceStarted = false;
 
 function applyTrack(name){
-  // remove old
-  scene.remove(roadMesh); scene.remove(wallsGroup); if(centerLine) scene.remove(centerLine);
-  if(name === 'classic') spline = buildClassicLoop();
-  else if(name === 'figure8') spline = buildFigure8();
-  else if(name === 'stadium') spline = buildStadium();
-  roadMesh = buildRoadMesh(spline, 6.5, 800);
-  wallsGroup = buildWalls(spline, 6.5, 300);
-  scene.add(roadMesh); scene.add(wallsGroup);
+  if(name==='classic') spline = buildClassic();
+  else if(name==='figure8') spline = buildFigure8();
+  else spline = buildStadium();
+  buildRoad(spline);
+  buildWalls(spline);
   buildCenterLine(spline);
   buildCenterSamples(spline);
   buildCheckpoints(spline, 12);
-  // reposition cars
-  resetCars(parseInt(aiCountSelect.value,10), colorPicker.value);
-  allCars.forEach((c,i)=> placeAtT(c, (startT + i*0.06) % 1, 3.6));
+  buildStartFinish(spline, 0);
+  resetCars();
 }
-
-trackSelect.addEventListener('change', e=>{ applyTrack(e.target.value); });
-aiCountSelect.addEventListener('change', ()=>{ applyTrack(trackSelect.value); });
-colorPicker.addEventListener('input', ()=>{ /* update player color */ if(playerState) { playerState.mesh.traverse(m=>{ if(m.material) m.material.color && m.material.color.set(colorPicker.value); }); }});
-carSelect.addEventListener('change', ()=>{ /* placeholder for different car models */ });
-
-startBtn.addEventListener('click', ()=>{ running = true; paused = false; });
-pauseBtn.addEventListener('click', ()=>{ paused = !paused; pauseBtn.textContent = paused ? 'Resume' : 'Pause'; });
-resetBtn.addEventListener('click', ()=>{ applyTrack(trackSelect.value); running = false; paused = false; });
-
-debugToggle.addEventListener('change', ()=>{ document.getElementById('hud').style.display = debugToggle.checked ? 'block' : 'none'; });
-
-/* -------------------------
-   Respawn helper
-   ------------------------- */
+function resetCars(){
+  allCars.forEach(c=>scene.remove(c.mesh));
+  allCars = []; cpuCars = [];
+  const colorMap = {red:'#ef4444',blue:'#3b82f6',green:'#22c55e',yellow:'#eab308'};
+  const baseColor = colorMap[carSelect.value] || '#ef4444';
+  const playerMesh = makeCarMesh(baseColor);
+  scene.add(playerMesh);
+  player = createCarState(playerMesh,{
+    maxSpeed:1.0, accel:1.4, brake:2.6, drag:1.7, lateralFriction:6.0, turnSpeed:3.2
+  });
+  allCars.push(player);
+  const aiCount = parseInt(aiCountSelect.value,10);
+  const aiColors = ['#3b82f6','#22c55e','#eab308','#a855f7'];
+  for(let i=0;i<aiCount;i++){
+    const m = makeCarMesh(aiColors[i%aiColors.length]);
+    scene.add(m);
+    const cs = createCarState(m,{
+      ai:true,
+      maxSpeed:0.8+Math.random()*0.25,
+      accel:0.7+Math.random()*0.4,
+      drag:1.4,
+      lateralFriction:5.0,
+      turnSpeed:2.4,
+      tOnSpline:(startT + (i+1)*0.06)%1
+    });
+    cpuCars.push(cs);
+    allCars.push(cs);
+  }
+  allCars.forEach((c,i)=>placeCarOnSpline(c,(startT + i*0.06)%1,3.5));
+}
 function respawnPlayer(){
-  const nearest = nearestCenterPoint(playerState.mesh.position);
-  placeAtT(playerState, nearest.t, 3.6);
+  const nearest = nearestCenterPoint(player.mesh.position);
+  placeCarOnSpline(player, nearest.t, 3.5);
 }
 
-/* -------------------------
-   Initialize cars & track
-   ------------------------- */
-resetCars(parseInt(aiCountSelect.value,10), colorPicker.value);
-allCars.forEach((c,i)=> placeAtT(c, (startT + i*0.06) % 1, 3.6));
+/* Countdown */
+async function runCountdown(){
+  if(countdownRunning) return;
+  countdownRunning = true;
+  raceStarted = false;
+  running = false;
+  paused = false;
+  lights.forEach(l=>{l.classList.remove('on'); l.style.display='block';});
+  banner.style.display='none';
+  for(let i=0;i<5;i++){
+    lights[i].classList.add('on');
+    await new Promise(r=>setTimeout(r,700));
+  }
+  lights.forEach(l=>l.style.display='none');
+  banner.textContent = 'GO!';
+  banner.style.display='block';
+  setTimeout(()=>banner.style.display='none',800);
+  raceStarted = true;
+  running = true;
+  countdownRunning = false;
+}
 
-/* -------------------------
-   Main physics & AI loop
-   ------------------------- */
-const hudLap = document.getElementById('lapInfo');
-const hudPos = document.getElementById('posInfo');
-const hudSpeed = document.getElementById('speedInfo');
+/* UI events */
+trackSelect.addEventListener('change', ()=>applyTrack(trackSelect.value));
+aiCountSelect.addEventListener('change', ()=>applyTrack(trackSelect.value));
+lapCountSelect.addEventListener('change', ()=>{ lapTarget = parseInt(lapCountSelect.value,10); hudLap.textContent = `Lap: ${player.lap} / ${lapTarget}`; });
+colorPicker.addEventListener('input', ()=>{
+  if(player){
+    player.mesh.traverse(m=>{ if(m.material && m.material.color) m.material.color.set(colorPicker.value); });
+  }
+});
+startBtn.addEventListener('click', ()=>{ runCountdown(); });
+pauseBtn.addEventListener('click', ()=>{ if(!raceStarted) return; paused = !paused; pauseBtn.textContent = paused?'Resume':'Pause'; });
+resetBtn.addEventListener('click', ()=>{ applyTrack(trackSelect.value); raceStarted=false; running=false; paused=false; });
 
-let lastTime = performance.now();
-function update(){
-  const now = performance.now();
-  let dt = Math.min(0.05, (now - lastTime)/1000);
-  lastTime = now;
-  if(!running || paused){ renderer.render(scene, camera); requestAnimationFrame(update); return; }
+/* ===== Physics & AI ===== */
+function updatePlayer(dt){
+  // input
+  const forwardKey = keys['w'] || keys['arrowup'];
+  const backKey = keys['s'] || keys['arrowdown'];
+  const leftKey = keys['a'] || keys['arrowleft'];
+  const rightKey = keys['d'] || keys['arrowright'];
 
-  // Player input mapping (keyboard)
-  // throttle: W or ArrowUp
-  playerState.throttle = (keys['w'] || keys['arrowup']) ? 1 : (keys['s'] || keys['arrowdown']) ? -1 : playerState.throttle;
-  // steer: A/D or ArrowLeft/Right
-  if(keys['a'] || keys['arrowleft']) playerState.steer = -1;
-  else if(keys['d'] || keys['arrowright']) playerState.steer = +1;
-  else if(!(btnLeft.matches(':active') || btnRight.matches(':active'))) playerState.steer = 0;
+  if(forwardKey) player.throttle = 1;
+  else if(backKey) player.throttle = -1;
+  else if(!btnForward.matches(':active')) player.throttle = 0;
 
-  // Physics per car
-  for(let i=0;i<allCars.length;i++){
-    const s = allCars[i];
-    if(!s) continue;
+  if(leftKey) player.steer = -1;
+  else if(rightKey) player.steer = 1;
+  else if(!(btnLeft.matches(':active') || btnRight.matches(':active'))) player.steer = 0;
 
-    if(s.ai){
-      // simple AI: follow spline t, adjust speed based on curvature and distance to next car
-      const lookAhead = 0.02;
-      const futureT = (s.tOnSpline + lookAhead) % 1;
-      const curTan = spline.getTangentAt(s.tOnSpline).normalize();
-      const futTan = spline.getTangentAt(futureT).normalize();
-      const angleDiff = Math.acos(Math.max(-1, Math.min(1, curTan.dot(futTan))));
-      const curvatureFactor = 1 - Math.min(1, angleDiff * 6);
-      const targetSpeed = s.maxSpeed * (0.6 + 0.4 * curvatureFactor);
-      // accelerate/decelerate
-      if(s.speed < targetSpeed) s.speed += s.accel * dt * 0.8;
-      else s.speed -= s.accel * dt * 0.6;
-      s.speed = Math.max(0.05, Math.min(s.maxSpeed, s.speed));
-      // advance along spline by distance
-      const advance = (s.speed * dt * 60) / spline.getLength();
-      s.tOnSpline = (s.tOnSpline + advance) % 1;
-      // place on spline
-      const center = spline.getPointAt(s.tOnSpline);
-      const tangent = spline.getTangentAt(s.tOnSpline).normalize();
-      const forward = tangent.clone().multiplyScalar(-1);
-      s.pos.copy(center.clone().add(forward.clone().multiplyScalar(3.6)));
-      s.mesh.position.copy(s.pos);
-      s.mesh.position.y = 0.5;
-      s.mesh.lookAt(center.x, center.y, center.z);
-      // checkpoint detection
-      checkCheckpoints(s);
-    } else {
-      // Player physics (bicycle-ish arcade)
-      // longitudinal
-      if(playerState.throttle > 0) playerState.speed += playerState.accel * dt * playerState.throttle;
-      else if(playerState.throttle < 0) playerState.speed -= playerState.brake * dt * (-playerState.throttle);
-      else {
-        // drag
-        const dragStep = playerState.drag * dt;
-        if(playerState.speed > 0) playerState.speed = Math.max(0, playerState.speed - dragStep);
-        else playerState.speed = Math.min(0, playerState.speed + dragStep);
-      }
-      // clamp
-      playerState.speed = Math.max(-playerState.maxSpeed*0.5, Math.min(playerState.maxSpeed, playerState.speed));
-      // steering: scale with speed but allow some turning at low speed
-      const speedFactor = Math.min(1, Math.abs(playerState.speed)/playerState.maxSpeed);
-      const steerEffect = (0.25 + 0.75*speedFactor) * playerState.turnSpeed;
-      // smooth angular velocity
-      const desiredAngular = playerState.steer * steerEffect;
-      playerState.angularVel += (desiredAngular - playerState.angularVel) * Math.min(1, 8 * dt);
-      playerState.heading += playerState.angularVel * dt;
-      // move forward
-      const fwd = new V3(Math.sin(playerState.heading), 0, -Math.cos(playerState.heading));
-      playerState.pos.add(fwd.multiplyScalar(playerState.speed * dt * 60));
-      // lateral centering and collision with walls
-      const nearest = nearestCenterPoint(playerState.pos);
-      const center = nearest.point;
-      const tangent = spline.getTangentAt(nearest.t).normalize();
-      const bin = new V3().crossVectors(new V3(0,1,0), tangent).normalize();
-      const lateral = playerState.pos.clone().sub(center).dot(bin);
-      const halfRoad = 6.5*0.5 - 0.35;
-      if(Math.abs(lateral) > halfRoad){
-        const push = (Math.abs(lateral) - halfRoad);
-        const dir = lateral > 0 ? -1 : 1;
-        playerState.pos.add(bin.clone().multiplyScalar(dir * push));
-        playerState.speed *= 0.35;
-      } else {
-        // gentle centering
-        playerState.pos.add(bin.clone().multiplyScalar(-lateral * 0.02 * dt * playerState.lateralFriction));
-      }
-      // apply to mesh
-      playerState.mesh.position.copy(playerState.pos);
-      playerState.mesh.position.y = 0.5;
-      // smooth orientation
-      tmpQ.setFromAxisAngle(new V3(0,1,0), playerState.heading);
-      playerState.mesh.quaternion.slerp(tmpQ, Math.min(1, 8 * dt));
-      // checkpoint detection
-      checkCheckpoints(playerState);
-    }
+  // longitudinal
+  if(player.throttle > 0) player.speed += player.accel * dt * player.throttle;
+  else if(player.throttle < 0) player.speed -= player.brake * dt * (-player.throttle);
+  else {
+    const dragStep = player.drag * dt;
+    if(player.speed > 0) player.speed = Math.max(0, player.speed - dragStep);
+    else player.speed = Math.min(0, player.speed + dragStep);
+  }
+  player.speed = Math.max(-player.maxSpeed*0.5, Math.min(player.maxSpeed, player.speed));
+
+  // steering
+  const speedFactor = Math.min(1, Math.abs(player.speed)/player.maxSpeed);
+  const steerEffect = (0.25 + 0.75*speedFactor) * player.turnSpeed;
+  const desiredAngular = player.steer * steerEffect;
+  player.angularVel += (desiredAngular - player.angularVel) * Math.min(1, 8*dt);
+  player.heading += player.angularVel * dt;
+
+  // move
+  const fwd = new V3(Math.sin(player.heading),0,-Math.cos(player.heading));
+  player.pos.add(fwd.multiplyScalar(player.speed * dt * 60));
+
+  // keep near center & walls
+  const nearest = nearestCenterPoint(player.pos);
+  const center = nearest.point;
+  const tan = spline.getTangentAt(nearest.t).normalize();
+  const bin = new V3().crossVectors(new V3(0,1,0), tan).normalize();
+  const lateral = player.pos.clone().sub(center).dot(bin);
+  const halfRoad = 7*0.5 - 0.4;
+  if(Math.abs(lateral) > halfRoad){
+    const push = (Math.abs(lateral) - halfRoad);
+    const dir = lateral > 0 ? -1 : 1;
+    player.pos.add(bin.clone().multiplyScalar(dir*push));
+    player.speed *= 0.35;
+  } else {
+    player.pos.add(bin.clone().multiplyScalar(-lateral * 0.02 * dt * player.lateralFriction));
   }
 
-  // update camera to follow player smoothly
-  const camOffset = new V3(0, 4.2, 10).applyQuaternion(playerState.mesh.quaternion);
-  const desiredCam = playerState.mesh.position.clone().add(camOffset);
-  camera.position.lerp(desiredCam, Math.min(1, 6 * dt));
-  camera.lookAt(playerState.mesh.position.clone().add(new V3(0,0.6,0)));
+  player.mesh.position.copy(player.pos);
+  player.mesh.position.y = 0.5;
+  const targetQ = new Q().setFromAxisAngle(new V3(0,1,0), player.heading);
+  player.mesh.quaternion.slerp(targetQ, Math.min(1, 8*dt));
 
-  // HUD: lap, position, speed
-  hudLap.textContent = `Lap: ${playerState.lap} / ${lapCountTarget}`;
-  // compute player position among cars by progress (lap + t)
-  const standings = allCars.map(c=>{
-    const progress = (c.lap * 1.0) + (c.ai ? c.tOnSpline : nearestCenterPoint(c.mesh.position).t);
-    return {c, progress};
-  }).sort((a,b)=> b.progress - a.progress);
-  const pos = standings.findIndex(s=>s.c === playerState) + 1;
-  hudPos.textContent = `Pos: ${pos} / ${allCars.length}`;
-  hudSpeed.textContent = `Speed: ${(playerState.speed*60).toFixed(1)}`;
-
-  renderer.render(scene, camera);
-  requestAnimationFrame(update);
+  handleCheckpoints(player, nearest.t);
 }
-
-/* checkpoint detection helper */
-function checkCheckpoints(state){
-  // find nearest checkpoint index
+function updateAI(dt){
+  const len = spline.getLength();
+  for(const c of cpuCars){
+    const lookAhead = 0.02;
+    const futureT = (c.tOnSpline + lookAhead) % 1;
+    const curTan = spline.getTangentAt(c.tOnSpline).normalize();
+    const futTan = spline.getTangentAt(futureT).normalize();
+    const angleDiff = Math.acos(Math.max(-1, Math.min(1, curTan.dot(futTan))));
+    const curvatureFactor = 1 - Math.min(1, angleDiff*6);
+    const targetSpeed = c.maxSpeed * (0.6 + 0.4*curvatureFactor);
+    if(c.speed < targetSpeed) c.speed += c.accel * dt * 0.8;
+    else c.speed -= c.accel * dt * 0.6;
+    c.speed = Math.max(0.1, Math.min(c.maxSpeed, c.speed));
+    const advance = (c.speed * dt * 60)/len;
+    c.tOnSpline = (c.tOnSpline + advance) % 1;
+    const center = spline.getPointAt(c.tOnSpline);
+    const tan = spline.getTangentAt(c.tOnSpline).normalize();
+    const forward = tan.clone().multiplyScalar(-1);
+    c.pos.copy(center.clone().add(forward.multiplyScalar(3.5)));
+    c.mesh.position.copy(c.pos);
+    c.mesh.position.y = 0.5;
+    c.mesh.lookAt(center.x, center.y, center.z);
+    handleCheckpoints(c, c.tOnSpline);
+  }
+}
+function handleCheckpoints(car, t){
+  // detect crossing start/finish
+  const prevCP = car.lastCheckpoint;
+  let nearestIdx = prevCP;
+  let bestDist = Infinity;
   for(let i=0;i<checkpoints.length;i++){
-    const cp = checkpoints[i];
-    const d2 = state.mesh.position.distanceToSquared(cp.p);
-    if(d2 < 9){ // within 3 units
-      if(i !== state.lastCheckpoint){
-        // ensure sequence: only accept next checkpoint (wrap)
-        const expected = (state.lastCheckpoint + 1) % checkpoints.length;
-        if(i === expected){
-          state.lastCheckpoint = i;
-          // if completed a lap
-          if(i === 0){
-            state.lap++;
-            state.checkpointTimes.push(performance.now());
-            if(state === playerState && state.lap >= lapCountTarget){
-              // player finished
-              running = false;
-              alert('You finished the race!');
-            }
-          }
+    const d = car.mesh.position.distanceToSquared(checkpoints[i].p);
+    if(d < bestDist){ bestDist = d; nearestIdx = i; }
+  }
+  if(nearestIdx !== car.lastCheckpoint){
+    const expected = (car.lastCheckpoint + 1) % checkpoints.length;
+    if(nearestIdx === expected){
+      car.lastCheckpoint = nearestIdx;
+      if(nearestIdx === 0){
+        car.lap++;
+        if(car === player && car.lap >= lapTarget){
+          running = false;
+          banner.textContent = 'FINISHED!';
+          banner.style.display = 'block';
+          setTimeout(()=>banner.style.display='none',2000);
         }
       }
     }
   }
 }
 
-/* -------------------------
-   Start the loop
-   ------------------------- */
-let started = false;
-startBtn.addEventListener('click', ()=>{
-  if(!started){
-    running = true; started = true; lastTime = performance.now(); requestAnimationFrame(update);
-  } else { running = true; paused = false; }
-});
-resetBtn.addEventListener('click', ()=>{ applyTrack(trackSelect.value); started = false; running = false; });
-pauseBtn.addEventListener('click', ()=>{ paused = !paused; });
+/* ===== Main loop ===== */
+let lastTime = performance.now();
+function loop(){
+  const now = performance.now();
+  const dt = Math.min(0.05, (now-lastTime)/1000);
+  lastTime = now;
 
-/* initial apply track */
-applyTrack(currentTrack);
+  if(running && !paused && raceStarted){
+    updatePlayer(dt);
+    updateAI(dt);
+  }
 
-/* -------------------------
-   Resize handling
-   ------------------------- */
+  // camera follow
+  const camOffset = new V3(0,4.2,10).applyQuaternion(player.mesh.quaternion);
+  const desiredCam = player.mesh.position.clone().add(camOffset);
+  camera.position.lerp(desiredCam, Math.min(1, 6*dt));
+  camera.lookAt(player.mesh.position.clone().add(new V3(0,0.6,0)));
+
+  // HUD
+  hudLap.textContent = `Lap: ${player.lap} / ${lapTarget}`;
+  const standings = allCars.map(c=>{
+    const t = c.ai ? c.tOnSpline : nearestCenterPoint(c.mesh.position).t;
+    return {c, progress: c.lap + t};
+  }).sort((a,b)=>b.progress - a.progress);
+  const pos = standings.findIndex(s=>s.c===player)+1;
+  hudPos.textContent = `Pos: ${pos} / ${allCars.length}`;
+  hudSpeed.textContent = `Speed: ${(player.speed*60).toFixed(1)}`;
+
+  renderer.render(scene,camera);
+  requestAnimationFrame(loop);
+}
+
+/* ===== Init ===== */
+applyTrack('classic');
+lapTarget = parseInt(lapCountSelect.value,10);
+hudLap.textContent = `Lap: ${player.lap} / ${lapTarget}`;
+requestAnimationFrame(loop);
+
+/* ===== Resize ===== */
 window.addEventListener('resize', ()=>{
   camera.aspect = window.innerWidth/window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-/* -------------------------
-   Console tuning helpers
-   ------------------------- */
-window.__racer = {
-  scene, camera, renderer, spline, allCars, playerState, cpuStates,
-  applyTrack, resetCars, placeAtT, respawnPlayer, buildCheckpoints
-};
-
-/* -------------------------
-   Final notes
-   ------------------------- */
-console.log('Racer ready. Use the UI to select track, car color, AI count. Press Start to race.');
+/* Debug handle */
+window.__racer = {scene, camera, spline, player, cpuCars, allCars};
 </script>
 </body>
 </html>
