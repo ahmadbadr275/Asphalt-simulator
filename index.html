@@ -1,0 +1,117 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Mini 3D Racer</title>
+  <style>
+    body{margin:0;overflow:hidden;font-family:sans-serif}
+    #ui{position:fixed;left:0;right:0;bottom:12px;display:flex;justify-content:center;gap:12px;pointer-events:none}
+    .btn{width:72px;height:72px;border-radius:12px;background:rgba(0,0,0,0.45);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;pointer-events:auto;user-select:none}
+    #left{transform:translateX(-10px)} #right{transform:translateX(10px)}
+    #forward{width:120px;border-radius:18px}
+    #info{position:fixed;left:12px;top:12px;color:#fff;background:rgba(0,0,0,0.35);padding:8px;border-radius:8px}
+    canvas{touch-action:none}
+  </style>
+</head>
+<body>
+<div id="info">Tap controls to drive</div>
+<div id="ui">
+  <div id="left" class="btn">◀</div>
+  <div id="forward" class="btn">▲</div>
+  <div id="right" class="btn">▶</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
+<script>
+  // Scene setup
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x87ceeb);
+  const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 1000);
+  camera.position.set(0,6,10);
+
+  const renderer = new THREE.WebGLRenderer({antialias:true});
+  renderer.setSize(innerWidth, innerHeight);
+  document.body.appendChild(renderer.domElement);
+
+  // Lights
+  scene.add(new THREE.HemisphereLight(0xffffff,0x444444,1.0));
+  const dir = new THREE.DirectionalLight(0xffffff,0.8);
+  dir.position.set(5,10,7);
+  scene.add(dir);
+
+  // Ground
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(200,200),
+    new THREE.MeshStandardMaterial({color:0x2d7a2d})
+  );
+  ground.rotation.x = -Math.PI/2;
+  scene.add(ground);
+
+  // Car
+  const car = new THREE.Mesh(
+    new THREE.BoxGeometry(1.6,0.6,3),
+    new THREE.MeshStandardMaterial({color:0xff3333})
+  );
+  car.position.y = 0.5;
+  scene.add(car);
+
+  // Simple track markers (visual)
+  for(let i=0;i<12;i++){
+    const b = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshStandardMaterial({color:0x333333}));
+    const a = i/12*Math.PI*2;
+    b.position.set(Math.cos(a)*18,0.5,Math.sin(a)*18);
+    scene.add(b);
+  }
+
+  // Controls state
+  const state = {forward:0, turn:0, speed:0};
+  const accel = 0.03;
+
+  // Touch UI
+  const left = document.getElementById('left');
+  const right = document.getElementById('right');
+  const forwardBtn = document.getElementById('forward');
+
+  function bindTouch(el, onStart, onEnd){
+    el.addEventListener('touchstart', e=>{e.preventDefault(); onStart();}, {passive:false});
+    el.addEventListener('touchend', e=>{e.preventDefault(); onEnd();}, {passive:false});
+    el.addEventListener('mousedown', e=>{onStart();});
+    el.addEventListener('mouseup', e=>{onEnd();});
+    el.addEventListener('mouseleave', e=>{onEnd();});
+  }
+
+  bindTouch(left, ()=>state.turn = 1, ()=>{ if(state.turn===1) state.turn = 0; });
+  bindTouch(right, ()=>state.turn = -1, ()=>{ if(state.turn===-1) state.turn = 0; });
+  bindTouch(forwardBtn, ()=>state.forward = 1, ()=>state.forward = 0);
+
+  // Simple physics loop
+  function animate(){
+    requestAnimationFrame(animate);
+    // speed update
+    state.speed += (state.forward * accel) - (state.speed * 0.02);
+    // rotation
+    car.rotation.y += state.turn * 0.03 * (1 + Math.abs(state.speed));
+    // move forward
+    const forwardVec = new THREE.Vector3(0,0,-1).applyQuaternion(car.quaternion);
+    car.position.add(forwardVec.multiplyScalar(state.speed));
+
+    // camera follow
+    const offset = new THREE.Vector3(0,4,8).applyQuaternion(car.quaternion);
+    const desired = car.position.clone().add(offset);
+    camera.position.lerp(desired, 0.12);
+    camera.lookAt(car.position);
+
+    renderer.render(scene, camera);
+  }
+  animate();
+
+  // Resize
+  window.addEventListener('resize', ()=> {
+    camera.aspect = innerWidth/innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  });
+</script>
+</body>
+</html>
