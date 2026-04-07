@@ -3,12 +3,11 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Racer Max – Car-Based Steering</title>
+<title>Racer – Fixed Controls</title>
 <script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
 <style>
   :root{
     --ui-bg: rgba(6,10,20,0.7);
-    --accent: #ff4d4d;
     --muted: #cbd5e1;
   }
   html,body{margin:0;height:100%;background:#020617;color:#e5e7eb;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
@@ -238,7 +237,11 @@ function buildRoad(spline, width=7, segments=800){
   geo.setAttribute('uv', new THREE.BufferAttribute(uvs,2));
   geo.setIndex(new THREE.BufferAttribute(indices,1));
   geo.computeVertexNormals();
-  const mat = new THREE.MeshStandardMaterial({color:0x111827, roughness:0.95, metalness:0.02});
+  const mat = new THREE.MeshStandardMaterial({
+    color:0x111827,
+    roughness:0.9,
+    metalness:0.05
+  });
   roadMesh = new THREE.Mesh(geo, mat);
   roadMesh.receiveShadow = true;
   scene.add(roadMesh);
@@ -249,7 +252,7 @@ function buildWalls(spline, width=7, samples=300){
   const wallHeight = 1.2, wallThickness = 0.6;
   const len = spline.getLength();
   const segLen = len/samples;
-  const mat = new THREE.MeshStandardMaterial({color:0x020617});
+  const mat = new THREE.MeshStandardMaterial({color:0x020617, roughness:0.4, metalness:0.2});
   for(let i=0;i<samples;i++){
     const t = i/samples;
     const p = spline.getPointAt(t);
@@ -380,19 +383,19 @@ function createCarState(mesh, opts){
 let player = null;
 let cpuCars = [];
 let allCars = [];
-const startT = 0.02;
+const startT = 0.02; // fixed start position just after line
 
-function placeCarOnSpline(state, t, back=3.5){
+function placeCarOnSpline(state, t, laneOffset=0){
   const center = spline.getPointAt(t);
   const tan = spline.getTangentAt(t).normalize();
   const forward = tan.clone().multiplyScalar(-1);
-  const pos = center.clone().add(forward.multiplyScalar(back));
+  const bin = new V3().crossVectors(new V3(0,1,0), tan).normalize();
+  const pos = center.clone()
+    .add(forward.multiplyScalar(4.0))   // behind the line
+    .add(bin.multiplyScalar(laneOffset));
   state.pos.copy(pos);
   state.mesh.position.copy(pos);
   state.mesh.position.y = 0.5;
-  // heading from tangent: forward = -tan
-  // forward vector we use: (sin h, 0, -cos h)
-  // so sin h = -tan.x, cos h = tan.z
   state.heading = Math.atan2(-tan.x, tan.z);
   state.speed = 0;
   state.angularVel = 0;
@@ -411,6 +414,10 @@ const btnLeft = document.getElementById('btn-left');
 const btnRight = document.getElementById('btn-right');
 const btnForward = document.getElementById('btn-forward');
 
+let touchLeft = false;
+let touchRight = false;
+let touchForward = false;
+
 function bindTouch(el, onStart, onEnd){
   el.addEventListener('touchstart', e=>{ e.preventDefault(); onStart(); }, {passive:false});
   el.addEventListener('touchend', e=>{ e.preventDefault(); onEnd(); }, {passive:false});
@@ -418,9 +425,9 @@ function bindTouch(el, onStart, onEnd){
   el.addEventListener('mouseup', e=>{ onEnd(); });
   el.addEventListener('mouseleave', e=>{ onEnd(); });
 }
-bindTouch(btnLeft, ()=>player.steer=-1, ()=>{ if(player.steer===-1) player.steer=0; });
-bindTouch(btnRight, ()=>player.steer=1, ()=>{ if(player.steer===1) player.steer=0; });
-bindTouch(btnForward, ()=>player.throttle=1, ()=>{ player.throttle=0; });
+bindTouch(btnLeft, ()=>touchLeft=true, ()=>touchLeft=false);
+bindTouch(btnRight, ()=>touchRight=true, ()=>touchRight=false);
+bindTouch(btnForward, ()=>touchForward=true, ()=>touchForward=false);
 
 /* UI / race control */
 const trackSelect = document.getElementById('trackSelect');
@@ -469,9 +476,10 @@ function resetCars(){
   const playerMesh = makeCarMesh(baseColor);
   scene.add(playerMesh);
   player = createCarState(playerMesh,{
-    maxSpeed:1.0, accel:1.4, brake:2.6, drag:1.7, lateralFriction:6.0, turnSpeed:3.2
+    maxSpeed:0.8, accel:1.2, brake:2.4, drag:1.7, lateralFriction:6.0, turnSpeed:3.0
   });
   allCars.push(player);
+
   const aiCount = parseInt(aiCountSelect.value,10);
   const aiColors = ['#3b82f6','#22c55e','#eab308','#a855f7'];
   for(let i=0;i<aiCount;i++){
@@ -479,21 +487,28 @@ function resetCars(){
     scene.add(m);
     const cs = createCarState(m,{
       ai:true,
-      maxSpeed:0.8+Math.random()*0.25,
-      accel:0.7+Math.random()*0.4,
+      maxSpeed:0.45+Math.random()*0.1,   // MUCH slower AI
+      accel:0.5+Math.random()*0.2,
       drag:1.4,
       lateralFriction:5.0,
-      turnSpeed:2.4,
-      tOnSpline:(startT + (i+1)*0.06)%1
+      turnSpeed:2.0,
+      tOnSpline:startT
     });
     cpuCars.push(cs);
     allCars.push(cs);
   }
-  allCars.forEach((c,i)=>placeCarOnSpline(c,(startT + i*0.06)%1,3.5));
+
+  // fixed grid: player center, AI left/right lanes
+  placeCarOnSpline(player, startT, 0);
+  const laneSpacing = 2.2;
+  cpuCars.forEach((c,i)=>{
+    const lane = (i%2===0 ? -1 : 1) * laneSpacing * (Math.floor(i/2)+1);
+    placeCarOnSpline(c, startT, lane);
+  });
 }
 function respawnPlayer(){
   const nearest = nearestCenterPoint(player.mesh.position);
-  placeCarOnSpline(player, nearest.t, 3.5);
+  placeCarOnSpline(player, nearest.t, 0);
 }
 
 /* Countdown */
@@ -536,17 +551,18 @@ resetBtn.addEventListener('click', ()=>{ applyTrack(trackSelect.value); raceStar
 
 /* Physics & AI */
 function updatePlayer(dt){
-  const forwardKey = keys['w'] || keys['arrowup'];
+  const forwardKey = keys['w'] || keys['arrowup'] || touchForward;
   const backKey = keys['s'] || keys['arrowdown'];
-  const leftKey = keys['a'] || keys['arrowleft'];
-  const rightKey = keys['d'] || keys['arrowright'];
+  const leftKey = keys['a'] || keys['arrowleft'] || touchLeft;
+  const rightKey = keys['d'] || keys['arrowright'] || touchRight;
 
-  player.throttle = forwardKey ? 1 : backKey ? -1 : player.throttle;
-  if(!forwardKey && !backKey && !btnForward.matches(':active')) player.throttle = 0;
+  if(forwardKey) player.throttle = 1;
+  else if(backKey) player.throttle = -1;
+  else player.throttle = 0;
 
-  if(leftKey) player.steer = -1;
-  else if(rightKey) player.steer = 1;
-  else if(!(btnLeft.matches(':active') || btnRight.matches(':active'))) player.steer = 0;
+  if(leftKey && !rightKey) player.steer = -1;
+  else if(rightKey && !leftKey) player.steer = 1;
+  else player.steer = 0;
 
   if(player.throttle > 0) player.speed += player.accel * dt * player.throttle;
   else if(player.throttle < 0) player.speed -= player.brake * dt * (-player.throttle);
@@ -606,7 +622,7 @@ function updateAI(dt){
     const center = spline.getPointAt(c.tOnSpline);
     const tan = spline.getTangentAt(c.tOnSpline).normalize();
     const forward = tan.clone().multiplyScalar(-1);
-    c.pos.copy(center.clone().add(forward.multiplyScalar(3.5)));
+    c.pos.copy(center.clone().add(forward.multiplyScalar(4.0)));
     c.mesh.position.copy(c.pos);
     c.mesh.position.y = 0.5;
     c.mesh.lookAt(center.x, center.y, center.z);
@@ -680,7 +696,7 @@ window.addEventListener('resize', ()=>{
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-/* Debug handle */
+/* Debug */
 window.__racer = {scene, camera, spline, player, cpuCars, allCars};
 </script>
 </body>
