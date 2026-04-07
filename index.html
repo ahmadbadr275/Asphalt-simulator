@@ -3,19 +3,19 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Mini 3D Racer</title>
+  <title>3D Racer Improved</title>
   <style>
-    body{margin:0;overflow:hidden;font-family:sans-serif}
-    #ui{position:fixed;left:0;right:0;bottom:12px;display:flex;justify-content:center;gap:12px;pointer-events:none}
-    .btn{width:72px;height:72px;border-radius:12px;background:rgba(0,0,0,0.45);color:#fff;display:flex;align-items:center;justify-content:center;font-size:20px;pointer-events:auto;user-select:none}
+    body{margin:0;overflow:hidden;background:#111}
+    #ui{position:fixed;left:0;right:0;bottom:12px;display:flex;justify-content:center;gap:12px;pointer-events:none;z-index:10}
+    .btn{width:72px;height:72px;border-radius:12px;background:rgba(0,0,0,0.45);color:#fff;display:flex;align-items:center;justify-content:center;font-size:22px;pointer-events:auto;user-select:none}
     #left{transform:translateX(-10px)} #right{transform:translateX(10px)}
     #forward{width:120px;border-radius:18px}
-    #info{position:fixed;left:12px;top:12px;color:#fff;background:rgba(0,0,0,0.35);padding:8px;border-radius:8px}
-    canvas{touch-action:none}
+    #info{position:fixed;left:12px;top:12px;color:#fff;background:rgba(0,0,0,0.35);padding:8px;border-radius:8px;z-index:10}
+    canvas{touch-action:none;display:block}
   </style>
 </head>
 <body>
-<div id="info">Tap controls to drive</div>
+<div id="info"><b>Position</b> 0,0 &nbsp; <b>Speed</b> 0</div>
 <div id="ui">
   <div id="left" class="btn">◀</div>
   <div id="forward" class="btn">▲</div>
@@ -23,95 +23,276 @@
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.154.0/examples/js/controls/OrbitControls.js"></script>
 <script>
-  // Scene setup
-  const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x87ceeb);
-  const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 1000);
-  camera.position.set(0,6,10);
+/* ===== Scene Setup ===== */
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
 
-  const renderer = new THREE.WebGLRenderer({antialias:true});
-  renderer.setSize(innerWidth, innerHeight);
-  document.body.appendChild(renderer.domElement);
+const camera = new THREE.PerspectiveCamera(60, innerWidth/innerHeight, 0.1, 1000);
+camera.position.set(0, 8, 18);
 
-  // Lights
-  scene.add(new THREE.HemisphereLight(0xffffff,0x444444,1.0));
-  const dir = new THREE.DirectionalLight(0xffffff,0.8);
-  dir.position.set(5,10,7);
-  scene.add(dir);
+const renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
 
-  // Ground
-  const ground = new THREE.Mesh(
-    new THREE.PlaneGeometry(200,200),
-    new THREE.MeshStandardMaterial({color:0x2d7a2d})
-  );
-  ground.rotation.x = -Math.PI/2;
-  scene.add(ground);
+const hemi = new THREE.HemisphereLight(0xffffff, 0x444444, 1.0);
+scene.add(hemi);
+const dir = new THREE.DirectionalLight(0xffffff, 0.9);
+dir.position.set(5,10,7);
+dir.castShadow = true;
+dir.shadow.mapSize.set(1024,1024);
+scene.add(dir);
 
-  // Car
-  const car = new THREE.Mesh(
-    new THREE.BoxGeometry(1.6,0.6,3),
-    new THREE.MeshStandardMaterial({color:0xff3333})
-  );
-  car.position.y = 0.5;
-  scene.add(car);
+/* ===== Track Spline and Road ===== */
+// Define control points for a looping track
+const points = [
+  new THREE.Vector3(0,0,0),
+  new THREE.Vector3(12,0,-6),
+  new THREE.Vector3(20,0,6),
+  new THREE.Vector3(8,0,18),
+  new THREE.Vector3(-10,0,14),
+  new THREE.Vector3(-18,0,2),
+  new THREE.Vector3(-10,0,-12),
+  new THREE.Vector3(4,0,-18),
+  new THREE.Vector3(12,0,-6) // close loop
+];
+const spline = new THREE.CatmullRomCurve3(points, true, 'catmullrom', 0.5);
 
-  // Simple track markers (visual)
-  for(let i=0;i<12;i++){
-    const b = new THREE.Mesh(new THREE.BoxGeometry(1,1,1), new THREE.MeshStandardMaterial({color:0x333333}));
-    const a = i/12*Math.PI*2;
-    b.position.set(Math.cos(a)*18,0.5,Math.sin(a)*18);
-    scene.add(b);
+// Create road geometry by sampling the spline and building quads
+function buildRoad(curve, width, segments){
+  const verts = [];
+  const indices = [];
+  const uvs = [];
+  for(let i=0;i<=segments;i++){
+    const t = i/segments;
+    const p = curve.getPointAt(t);
+    const tangent = curve.getTangentAt(t).normalize();
+    const normal = new THREE.Vector3(0,1,0);
+    const binormal = new THREE.Vector3().crossVectors(normal, tangent).normalize();
+    const left = p.clone().add(binormal.clone().multiplyScalar(-width*0.5));
+    const right = p.clone().add(binormal.clone().multiplyScalar(width*0.5));
+    verts.push(left.x, left.y+0.01, left.z);
+    verts.push(right.x, right.y+0.01, right.z);
+    uvs.push(t,0); uvs.push(t,1);
+    if(i<segments){
+      const a = i*2, b = i*2+1, c = (i+1)*2, d = (i+1)*2+1;
+      indices.push(a,b,c); indices.push(b,d,c);
+    }
   }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(verts,3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs,2));
+  geo.setIndex(indices);
+  geo.computeVertexNormals();
+  return geo;
+}
+const roadWidth = 6.5;
+const roadGeo = buildRoad(spline, roadWidth, 400);
+const roadMat = new THREE.MeshStandardMaterial({color:0x333333, roughness:0.8});
+const road = new THREE.Mesh(roadGeo, roadMat);
+road.receiveShadow = true;
+scene.add(road);
 
-  // Controls state
-  const state = {forward:0, turn:0, speed:0};
-  const accel = 0.03;
+/* ===== Borders (walls) ===== */
+const wallMaterial = new THREE.MeshStandardMaterial({color:0x222222});
+const walls = new THREE.Group();
+const wallHeight = 1.2;
+const wallThickness = 0.6;
+const samples = 200;
+for(let i=0;i<samples;i++){
+  const t = i/samples;
+  const p = spline.getPointAt(t);
+  const tangent = spline.getTangentAt(t).normalize();
+  const binormal = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), tangent).normalize();
+  const leftPos = p.clone().add(binormal.clone().multiplyScalar(-roadWidth*0.5 - wallThickness*0.5));
+  const rightPos = p.clone().add(binormal.clone().multiplyScalar(roadWidth*0.5 + wallThickness*0.5));
+  const angle = Math.atan2(tangent.x, tangent.z);
+  const leftWall = new THREE.Mesh(new THREE.BoxGeometry(wallThickness, wallHeight, 1.0), wallMaterial);
+  leftWall.position.copy(leftPos).y = wallHeight*0.5;
+  leftWall.rotation.y = -angle;
+  leftWall.castShadow = true;
+  walls.add(leftWall);
+  const rightWall = leftWall.clone();
+  rightWall.position.copy(rightPos).y = wallHeight*0.5;
+  walls.add(rightWall);
+}
+scene.add(walls);
 
-  // Touch UI
-  const left = document.getElementById('left');
-  const right = document.getElementById('right');
-  const forwardBtn = document.getElementById('forward');
+/* ===== Ground beyond track ===== */
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(400,400),
+  new THREE.MeshStandardMaterial({color:0x2d7a2d})
+);
+ground.rotation.x = -Math.PI/2;
+ground.position.y = -0.01;
+ground.receiveShadow = true;
+scene.add(ground);
 
-  function bindTouch(el, onStart, onEnd){
-    el.addEventListener('touchstart', e=>{e.preventDefault(); onStart();}, {passive:false});
-    el.addEventListener('touchend', e=>{e.preventDefault(); onEnd();}, {passive:false});
-    el.addEventListener('mousedown', e=>{onStart();});
-    el.addEventListener('mouseup', e=>{onEnd();});
-    el.addEventListener('mouseleave', e=>{onEnd();});
-  }
-
-  bindTouch(left, ()=>state.turn = 1, ()=>{ if(state.turn===1) state.turn = 0; });
-  bindTouch(right, ()=>state.turn = -1, ()=>{ if(state.turn===-1) state.turn = 0; });
-  bindTouch(forwardBtn, ()=>state.forward = 1, ()=>state.forward = 0);
-
-  // Simple physics loop
-  function animate(){
-    requestAnimationFrame(animate);
-    // speed update
-    state.speed += (state.forward * accel) - (state.speed * 0.02);
-    // rotation
-    car.rotation.y += state.turn * 0.03 * (1 + Math.abs(state.speed));
-    // move forward
-    const forwardVec = new THREE.Vector3(0,0,-1).applyQuaternion(car.quaternion);
-    car.position.add(forwardVec.multiplyScalar(state.speed));
-
-    // camera follow
-    const offset = new THREE.Vector3(0,4,8).applyQuaternion(car.quaternion);
-    const desired = car.position.clone().add(offset);
-    camera.position.lerp(desired, 0.12);
-    camera.lookAt(car.position);
-
-    renderer.render(scene, camera);
-  }
-  animate();
-
-  // Resize
-  window.addEventListener('resize', ()=> {
-    camera.aspect = innerWidth/innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(innerWidth, innerHeight);
+/* ===== Car Model ===== */
+const car = new THREE.Group();
+function makeCar(){
+  const bodyMat = new THREE.MeshStandardMaterial({color:0xff3333, metalness:0.2, roughness:0.4});
+  const cabinMat = new THREE.MeshStandardMaterial({color:0x222222, metalness:0.1, roughness:0.2});
+  const wheelMat = new THREE.MeshStandardMaterial({color:0x111111, metalness:0.1, roughness:0.6});
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.8,0.5,3.2), bodyMat);
+  body.position.y = 0.45;
+  body.castShadow = true;
+  car.add(body);
+  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.2,0.45,1.2), cabinMat);
+  cabin.position.set(0,0.85,-0.1);
+  cabin.castShadow = true;
+  car.add(cabin);
+  const wheelGeo = new THREE.CylinderGeometry(0.35,0.35,0.4,16);
+  wheelGeo.rotateZ(Math.PI/2);
+  const offsets = [
+    [0.9,0.25,1.05],
+    [-0.9,0.25,1.05],
+    [0.9,0.25,-1.05],
+    [-0.9,0.25,-1.05]
+  ];
+  offsets.forEach(o=>{
+    const w = new THREE.Mesh(wheelGeo, wheelMat);
+    w.position.set(o[0], o[1], o[2]);
+    w.castShadow = true;
+    car.add(w);
   });
+}
+makeCar();
+car.position.set(0,0.5, -6);
+scene.add(car);
+
+/* ===== Physics State ===== */
+const state = {
+  velocity: new THREE.Vector3(0,0,0),
+  forwardInput: 0,
+  turnInput: 0,
+  maxSpeed: 0.6,        // tune for feel
+  accel: 0.015,
+  brake: 0.03,
+  friction: 0.01,
+  turnSpeed: 0.035
+};
+
+/* ===== Collision Helpers ===== */
+// Precompute centerline samples for quick nearest point checks
+const centerSamples = [];
+const centerCount = 800;
+for(let i=0;i<centerCount;i++){
+  const t = i/centerCount;
+  centerSamples.push(spline.getPointAt(t));
+}
+function nearestCenterPoint(pos){
+  // coarse nearest by sampling; good enough for arcade collision
+  let best = null, bestDist = Infinity, bestT = 0;
+  for(let i=0;i<centerSamples.length;i++){
+    const d = pos.distanceToSquared(centerSamples[i]);
+    if(d < bestDist){ bestDist = d; best = centerSamples[i]; bestT = i/centerSamples.length; }
+  }
+  return {point: best, t: bestT, distSqr: bestDist};
+}
+
+/* ===== Controls (keyboard + touch) ===== */
+window.addEventListener('keydown', e=>{
+  if(e.key === 'w' || e.key === 'ArrowUp') state.forwardInput = 1;
+  if(e.key === 's' || e.key === 'ArrowDown') state.forwardInput = -1;
+  if(e.key === 'a' || e.key === 'ArrowLeft') state.turnInput = 1;
+  if(e.key === 'd' || e.key === 'ArrowRight') state.turnInput = -1;
+});
+window.addEventListener('keyup', e=>{
+  if(e.key === 'w' || e.key === 'ArrowUp' || e.key === 's' || e.key === 'ArrowDown') state.forwardInput = 0;
+  if(e.key === 'a' || e.key === 'ArrowLeft' || e.key === 'd' || e.key === 'ArrowRight') state.turnInput = 0;
+});
+
+const leftBtn = document.getElementById('left');
+const rightBtn = document.getElementById('right');
+const forwardBtn = document.getElementById('forward');
+
+function bindTouch(el, onStart, onEnd){
+  el.addEventListener('touchstart', e=>{ e.preventDefault(); onStart(); }, {passive:false});
+  el.addEventListener('touchend', e=>{ e.preventDefault(); onEnd(); }, {passive:false});
+  el.addEventListener('mousedown', e=>{ onStart(); });
+  el.addEventListener('mouseup', e=>{ onEnd(); });
+  el.addEventListener('mouseleave', e=>{ onEnd(); });
+}
+bindTouch(leftBtn, ()=>state.turnInput = 1, ()=>{ if(state.turnInput===1) state.turnInput = 0; });
+bindTouch(rightBtn, ()=>state.turnInput = -1, ()=>{ if(state.turnInput===-1) state.turnInput = 0; });
+bindTouch(forwardBtn, ()=>state.forwardInput = 1, ()=>state.forwardInput = 0);
+
+/* ===== HUD update ===== */
+const info = document.getElementById('info');
+
+/* ===== Main Loop ===== */
+let last = performance.now();
+function update(){
+  const now = performance.now();
+  const dt = Math.min(0.05, (now - last)/1000);
+  last = now;
+
+  // Forward/back acceleration
+  if(state.forwardInput > 0){
+    state.velocity.add(car.localToWorld(new THREE.Vector3(0,0,-1)).sub(car.position).normalize().multiplyScalar(state.accel));
+  } else if(state.forwardInput < 0){
+    // braking / reverse
+    state.velocity.add(car.localToWorld(new THREE.Vector3(0,0,1)).sub(car.position).normalize().multiplyScalar(state.brake));
+  } else {
+    // natural friction
+    state.velocity.multiplyScalar(1 - state.friction);
+  }
+
+  // Clamp speed
+  const speed = state.velocity.length();
+  if(speed > state.maxSpeed) state.velocity.setLength(state.maxSpeed);
+
+  // Steering: rotate car based on input and current forward speed
+  const forwardSpeed = state.velocity.dot(new THREE.Vector3(0,0,-1).applyQuaternion(car.quaternion));
+  const turnFactor = (Math.sign(forwardSpeed) || 1) * (Math.min(1, Math.abs(forwardSpeed)/state.maxSpeed));
+  car.rotation.y += state.turnInput * state.turnSpeed * turnFactor;
+
+  // Integrate position
+  car.position.add(state.velocity.clone());
+
+  // Collision with walls: compute nearest centerline and lateral offset
+  const nearest = nearestCenterPoint(car.position);
+  const center = nearest.point;
+  // compute tangent at nearest t for local binormal
+  const tangent = spline.getTangentAt(nearest.t);
+  const binormal = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), tangent).normalize();
+  const lateral = car.position.clone().sub(center).dot(binormal);
+  const halfRoad = roadWidth*0.5 - 0.35; // margin inside walls
+  if(Math.abs(lateral) > halfRoad){
+    // push back inside and damp velocity
+    const push = (Math.abs(lateral) - halfRoad);
+    const dir = lateral > 0 ? -1 : 1;
+    car.position.add(binormal.clone().multiplyScalar(dir * push));
+    // reduce forward speed on collision
+    state.velocity.multiplyScalar(0.4);
+  }
+
+  // Keep car above ground
+  car.position.y = 0.5;
+
+  // Camera follow (smooth)
+  const camOffset = new THREE.Vector3(0,4,10).applyQuaternion(car.quaternion);
+  const desired = car.position.clone().add(camOffset);
+  camera.position.lerp(desired, 0.12);
+  camera.lookAt(car.position.clone().add(new THREE.Vector3(0,0.6,0)));
+
+  // HUD
+  info.innerHTML = `<b>Pos</b> ${car.position.x.toFixed(1)}, ${car.position.z.toFixed(1)} &nbsp; <b>Speed</b> ${(state.velocity.length()*60).toFixed(1)}`;
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(update);
+}
+update();
+
+/* ===== Resize ===== */
+window.addEventListener('resize', ()=> {
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
 </script>
 </body>
 </html>
