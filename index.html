@@ -3,7 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Asphalt Simulator</title>
+  <title>My 3D Racer</title>
+
+  <!-- Link to the SVG favicon file placed at the repo root -->
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="alternate icon" href="/favicon.svg" type="image/svg+xml">
+
   <style>
     body{margin:0;overflow:hidden;background:#111}
     #ui{position:fixed;left:0;right:0;bottom:12px;display:flex;justify-content:center;gap:12px;pointer-events:none;z-index:10}
@@ -188,9 +193,7 @@ function nearestCenterPoint(pos){
 }
 
 /* ===== Safe placement and respawn helpers ===== */
-// Choose a starting t along the spline (0..1)
 const startT = 0.02;
-
 function placeCarAtT(t, backwardOffset = 4.0) {
   const center = spline.getPointAt(t);
   const tangent = spline.getTangentAt(t).normalize();
@@ -202,10 +205,7 @@ function placeCarAtT(t, backwardOffset = 4.0) {
   car.lookAt(lookAt.x, lookAt.y, lookAt.z);
   state.speed = 0;
 }
-
-// initial safe placement
 placeCarAtT(startT);
-
 function respawnToNearestCenter() {
   let bestIdx = 0;
   let bestDist = Infinity;
@@ -280,11 +280,12 @@ function update(){
   // Clamp speed
   state.speed = Math.max(-state.maxSpeed*0.5, Math.min(state.maxSpeed, state.speed));
 
-  // Steering scaled by speed
-  const speedFactor = Math.min(1, Math.abs(state.speed) / state.maxSpeed);
+  // Steering: allow turning even when stopped by using a minimum turn factor
+  const rawFactor = Math.abs(state.speed) / state.maxSpeed;
+  const speedFactor = Math.max(0.25, Math.min(1, rawFactor)); // <-- ensures turning when speed is near zero
   car.rotation.y += state.turnInput * state.turnSpeed * speedFactor;
 
-  // Move forward along local -Z
+  // Move forward along local -Z (scale by dt to keep behavior stable across frame rates)
   const forwardVec = new THREE.Vector3(0,0,-1).applyQuaternion(car.quaternion);
   car.position.add(forwardVec.multiplyScalar(state.speed));
 
