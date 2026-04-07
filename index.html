@@ -3,14 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Racer – Fixed Controls</title>
+<title>Racer – Drift Mix</title>
 <script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
 <style>
   :root{
     --ui-bg: rgba(6,10,20,0.7);
     --muted: #cbd5e1;
   }
-  html,body{margin:0;height:100%;background:#020617;color:#e5e7eb;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+  html,body{margin:0;height:100%;background:#020617;color:#e5e7eb;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;overflow:hidden}
   #canvas-wrap{position:fixed;inset:0;overflow:hidden}
   canvas{display:block;width:100%;height:100%}
   .topbar{position:fixed;left:12px;right:12px;top:12px;display:flex;flex-wrap:wrap;gap:8px;z-index:30}
@@ -74,6 +74,7 @@
     <button id="startBtn">Start</button>
     <button id="pauseBtn">Pause</button>
     <button id="resetBtn">Reset</button>
+    <button id="nightBtn">Night</button>
   </div>
   <div class="panel">
     <label>AI Cars</label>
@@ -114,6 +115,7 @@ const renderer = new THREE.WebGLRenderer({antialias:true});
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 container.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -126,20 +128,29 @@ camera.position.set(0,6,14);
 /* Lights */
 const hemi = new THREE.HemisphereLight(0xffffff, 0x334155, 0.9);
 scene.add(hemi);
-const sun = new THREE.DirectionalLight(0xffffff, 0.9);
-sun.position.set(20,30,10);
+const sun = new THREE.DirectionalLight(0xffffff, 1.0);
+sun.position.set(40,60,20);
 sun.castShadow = true;
-sun.shadow.mapSize.set(1024,1024);
-sun.shadow.camera.left = -60;
-sun.shadow.camera.right = 60;
-sun.shadow.camera.top = 60;
-sun.shadow.camera.bottom = -60;
+sun.shadow.mapSize.set(2048,2048);
+sun.shadow.camera.left = -80;
+sun.shadow.camera.right = 80;
+sun.shadow.camera.top = 80;
+sun.shadow.camera.bottom = -80;
 scene.add(sun);
+
+/* Night headlights */
+const headLightL = new THREE.SpotLight(0xffffff, 0, 20, Math.PI/6, 0.4, 1);
+const headLightR = headLightL.clone();
+headLightL.castShadow = true;
+headLightR.castShadow = true;
+scene.add(headLightL);
+scene.add(headLightR);
+let nightMode = false;
 
 /* Ground & scenery */
 const ground = new THREE.Mesh(
   new THREE.PlaneGeometry(1000,1000),
-  new THREE.MeshStandardMaterial({color:0x14532d})
+  new THREE.MeshStandardMaterial({color:0x14532d, roughness:0.95})
 );
 ground.rotation.x = -Math.PI/2;
 ground.position.y = -0.02;
@@ -147,7 +158,7 @@ ground.receiveShadow = true;
 scene.add(ground);
 
 const hills = new THREE.Group();
-for(let i=0;i<14;i++){
+for(let i=0;i<16;i++){
   const g = new THREE.Mesh(
     new THREE.ConeGeometry(10+Math.random()*20, 30+Math.random()*40, 8),
     new THREE.MeshStandardMaterial({color:0x166534})
@@ -328,19 +339,19 @@ function buildCheckpoints(spline, count=12){
   }
 }
 
-/* Car factory */
+/* Car factory (with wheel refs) */
 function makeCarMesh(color){
   const group = new THREE.Group();
   const body = new THREE.Mesh(
     new THREE.BoxGeometry(1.6,0.5,3),
-    new THREE.MeshStandardMaterial({color, metalness:0.25, roughness:0.35})
+    new THREE.MeshStandardMaterial({color, metalness:0.35, roughness:0.3})
   );
   body.position.y = 0.45;
   body.castShadow = true;
   group.add(body);
   const cabin = new THREE.Mesh(
     new THREE.BoxGeometry(1.1,0.45,1.2),
-    new THREE.MeshStandardMaterial({color:0x020617, metalness:0.1, roughness:0.2})
+    new THREE.MeshStandardMaterial({color:0x020617, metalness:0.2, roughness:0.2})
   );
   cabin.position.set(0,0.85,-0.1);
   cabin.castShadow = true;
@@ -348,18 +359,24 @@ function makeCarMesh(color){
   const wheelGeo = new THREE.CylinderGeometry(0.35,0.35,0.4,16);
   wheelGeo.rotateZ(Math.PI/2);
   const wheelMat = new THREE.MeshStandardMaterial({color:0x020617});
-  const offsets = [[0.9,0.25,1.05],[-0.9,0.25,1.05],[0.9,0.25,-1.05],[-0.9,0.25,-1.05]];
+  const offsets = [
+    [0.9,0.25,1.05],[-0.9,0.25,1.05],
+    [0.9,0.25,-1.05],[-0.9,0.25,-1.05]
+  ];
+  const wheels = [];
   offsets.forEach(o=>{
     const w = new THREE.Mesh(wheelGeo, wheelMat);
     w.position.set(o[0],o[1],o[2]);
     w.castShadow = true;
     group.add(w);
+    wheels.push(w);
   });
-  return group;
+  return {group, wheels};
 }
-function createCarState(mesh, opts){
+function createCarState(mesh, wheels, opts){
   return {
     mesh,
+    wheels,
     pos: new V3(),
     heading: 0,
     speed: 0,
@@ -370,20 +387,50 @@ function createCarState(mesh, opts){
     accel: opts.accel || 1.2,
     brake: opts.brake || 2.4,
     drag: opts.drag || 1.6,
-    lateralFriction: opts.lateralFriction || 6.0,
+    baseGrip: opts.baseGrip || 6.0,
+    driftFactor: opts.driftFactor || 0.55,
     turnSpeed: opts.turnSpeed || 3.0,
     ai: !!opts.ai,
     tOnSpline: opts.tOnSpline || 0,
     lap: 0,
-    lastCheckpoint: 0
+    lastCheckpoint: 0,
+    skidTimer: 0
   };
+}
+
+/* Skidmarks + smoke */
+const skidGroup = new THREE.Group();
+scene.add(skidGroup);
+const smokeGroup = new THREE.Group();
+scene.add(smokeGroup);
+
+function addSkid(pos){
+  const geo = new THREE.PlaneGeometry(0.12,0.6);
+  const mat = new THREE.MeshBasicMaterial({color:0x111827, transparent:true, opacity:0.7, side:THREE.DoubleSide});
+  const m = new THREE.Mesh(geo, mat);
+  m.rotation.x = -Math.PI/2;
+  m.position.copy(pos);
+  m.position.y = 0.01;
+  skidGroup.add(m);
+  if(skidGroup.children.length>400){
+    skidGroup.remove(skidGroup.children[0]);
+  }
+}
+function addSmoke(pos){
+  const geo = new THREE.SphereGeometry(0.12,8,8);
+  const mat = new THREE.MeshBasicMaterial({color:0xd4d4d8, transparent:true, opacity:0.7});
+  const m = new THREE.Mesh(geo, mat);
+  m.position.copy(pos);
+  m.position.y += 0.2;
+  m.userData.life = 0.5;
+  smokeGroup.add(m);
 }
 
 /* Cars */
 let player = null;
 let cpuCars = [];
 let allCars = [];
-const startT = 0.02; // fixed start position just after line
+const startT = 0.02;
 
 function placeCarOnSpline(state, t, laneOffset=0){
   const center = spline.getPointAt(t);
@@ -391,7 +438,7 @@ function placeCarOnSpline(state, t, laneOffset=0){
   const forward = tan.clone().multiplyScalar(-1);
   const bin = new V3().crossVectors(new V3(0,1,0), tan).normalize();
   const pos = center.clone()
-    .add(forward.multiplyScalar(4.0))   // behind the line
+    .add(forward.multiplyScalar(4.0))
     .add(bin.multiplyScalar(laneOffset));
   state.pos.copy(pos);
   state.mesh.position.copy(pos);
@@ -436,6 +483,7 @@ const colorPicker = document.getElementById('colorPicker');
 const startBtn = document.getElementById('startBtn');
 const pauseBtn = document.getElementById('pauseBtn');
 const resetBtn = document.getElementById('resetBtn');
+const nightBtn = document.getElementById('nightBtn');
 const aiCountSelect = document.getElementById('aiCount');
 const lapCountSelect = document.getElementById('lapCount');
 const hudLap = document.getElementById('hudLap');
@@ -473,24 +521,31 @@ function resetCars(){
   allCars = []; cpuCars = [];
   const colorMap = {red:'#ef4444',blue:'#3b82f6',green:'#22c55e',yellow:'#eab308'};
   const baseColor = colorMap[carSelect.value] || '#ef4444';
-  const playerMesh = makeCarMesh(baseColor);
+  const {group:playerMesh,wheels:playerWheels} = makeCarMesh(baseColor);
   scene.add(playerMesh);
-  player = createCarState(playerMesh,{
-    maxSpeed:0.8, accel:1.2, brake:2.4, drag:1.7, lateralFriction:6.0, turnSpeed:3.0
+  player = createCarState(playerMesh, playerWheels,{
+    maxSpeed:0.95,
+    accel:1.4,
+    brake:2.6,
+    drag:1.7,
+    baseGrip:6.0,
+    driftFactor:0.55,
+    turnSpeed:3.4
   });
   allCars.push(player);
 
   const aiCount = parseInt(aiCountSelect.value,10);
   const aiColors = ['#3b82f6','#22c55e','#eab308','#a855f7'];
   for(let i=0;i<aiCount;i++){
-    const m = makeCarMesh(aiColors[i%aiColors.length]);
-    scene.add(m);
-    const cs = createCarState(m,{
+    const {group:wMesh,wheels:wWheels} = makeCarMesh(aiColors[i%aiColors.length]);
+    scene.add(wMesh);
+    const cs = createCarState(wMesh, wWheels,{
       ai:true,
-      maxSpeed:0.45+Math.random()*0.1,   // MUCH slower AI
+      maxSpeed:0.45+Math.random()*0.1,
       accel:0.5+Math.random()*0.2,
       drag:1.4,
-      lateralFriction:5.0,
+      baseGrip:5.0,
+      driftFactor:0.4,
       turnSpeed:2.0,
       tOnSpline:startT
     });
@@ -498,7 +553,6 @@ function resetCars(){
     allCars.push(cs);
   }
 
-  // fixed grid: player center, AI left/right lanes
   placeCarOnSpline(player, startT, 0);
   const laneSpacing = 2.2;
   cpuCars.forEach((c,i)=>{
@@ -548,6 +602,26 @@ colorPicker.addEventListener('input', ()=>{
 startBtn.addEventListener('click', ()=>{ runCountdown(); });
 pauseBtn.addEventListener('click', ()=>{ if(!raceStarted) return; paused = !paused; pauseBtn.textContent = paused?'Resume':'Pause'; });
 resetBtn.addEventListener('click', ()=>{ applyTrack(trackSelect.value); raceStarted=false; running=false; paused=false; });
+nightBtn.addEventListener('click', ()=>{
+  nightMode = !nightMode;
+  if(nightMode){
+    scene.background.set(0x020617);
+    scene.fog.color.set(0x020617);
+    hemi.intensity = 0.15;
+    sun.intensity = 0.25;
+    headLightL.intensity = 2.2;
+    headLightR.intensity = 2.2;
+    nightBtn.textContent = 'Day';
+  }else{
+    scene.background.set(0x7fb7ff);
+    scene.fog.color.set(0x7fb7ff);
+    hemi.intensity = 0.9;
+    sun.intensity = 1.0;
+    headLightL.intensity = 0;
+    headLightR.intensity = 0;
+    nightBtn.textContent = 'Night';
+  }
+});
 
 /* Physics & AI */
 function updatePlayer(dt){
@@ -573,11 +647,12 @@ function updatePlayer(dt){
   }
   player.speed = Math.max(-player.maxSpeed*0.5, Math.min(player.maxSpeed, player.speed));
 
-  const speedFactor = Math.min(1, Math.abs(player.speed)/player.maxSpeed);
-  const steerEffect = (0.25 + 0.75*speedFactor) * player.turnSpeed;
+  const speedNorm = Math.min(1, Math.abs(player.speed)/player.maxSpeed);
+  const grip = player.baseGrip * (1 - player.driftFactor*speedNorm);
+  const steerEffect = (0.25 + 0.75*speedNorm) * player.turnSpeed;
   const desiredAngular = player.steer * steerEffect;
-  player.angularVel += (desiredAngular - player.angularVel) * Math.min(1, 8*dt);
-  player.heading += player.angularVel * dt;
+  player.angularVel += (desiredAngular - player.angularVel) * Math.min(1, 6*dt);
+  player.heading += player.angularVel * dt * (0.6 + 0.4*speedNorm);
 
   const fwd = new V3(Math.sin(player.heading),0,-Math.cos(player.heading));
   player.pos.add(fwd.multiplyScalar(player.speed * dt * 60));
@@ -594,13 +669,32 @@ function updatePlayer(dt){
     player.pos.add(bin.clone().multiplyScalar(dir*push));
     player.speed *= 0.35;
   } else {
-    player.pos.add(bin.clone().multiplyScalar(-lateral * 0.02 * dt * player.lateralFriction));
+    player.pos.add(bin.clone().multiplyScalar(-lateral * 0.02 * dt * grip));
   }
 
   player.mesh.position.copy(player.pos);
-  player.mesh.position.y = 0.5;
+  player.mesh.position.y = 0.5 + Math.sin(performance.now()*0.005)*0.03;
   const targetQ = new Q().setFromAxisAngle(new V3(0,1,0), player.heading);
-  player.mesh.quaternion.slerp(targetQ, Math.min(1, 8*dt));
+  player.mesh.quaternion.slerp(targetQ, Math.min(1, 10*dt));
+
+  const wheelRot = player.speed * dt * 40;
+  player.wheels.forEach(w=>{ w.rotation.x -= wheelRot; });
+
+  const slip = Math.abs(lateral) * speedNorm;
+  if(slip > 0.4 && Math.abs(player.speed) > 0.3){
+    player.skidTimer += dt;
+    if(player.skidTimer > 0.03){
+      const rearLeft = player.wheels[2].getWorldPosition(new V3());
+      const rearRight = player.wheels[3].getWorldPosition(new V3());
+      addSkid(rearLeft);
+      addSkid(rearRight);
+      addSmoke(rearLeft);
+      addSmoke(rearRight);
+      player.skidTimer = 0;
+    }
+  }else{
+    player.skidTimer = 0;
+  }
 
   handleCheckpoints(player, nearest.t);
 }
@@ -626,6 +720,8 @@ function updateAI(dt){
     c.mesh.position.copy(c.pos);
     c.mesh.position.y = 0.5;
     c.mesh.lookAt(center.x, center.y, center.z);
+    const wheelRot = c.speed * dt * 40;
+    c.wheels.forEach(w=>{ w.rotation.x -= wheelRot; });
     handleCheckpoints(c, c.tOnSpline);
   }
 }
@@ -653,6 +749,19 @@ function handleCheckpoints(car, t){
   }
 }
 
+/* Smoke update */
+function updateSmoke(dt){
+  for(let i=smokeGroup.children.length-1;i>=0;i--){
+    const s = smokeGroup.children[i];
+    s.userData.life -= dt;
+    s.position.y += dt*0.6;
+    s.material.opacity = Math.max(0, s.userData.life*1.4);
+    if(s.userData.life<=0){
+      smokeGroup.remove(s);
+    }
+  }
+}
+
 /* Main loop */
 let lastTime = performance.now();
 function loop(){
@@ -664,11 +773,24 @@ function loop(){
     updatePlayer(dt);
     updateAI(dt);
   }
+  updateSmoke(dt);
 
   const camOffset = new V3(0,4.2,10).applyQuaternion(player.mesh.quaternion);
   const desiredCam = player.mesh.position.clone().add(camOffset);
   camera.position.lerp(desiredCam, Math.min(1, 6*dt));
   camera.lookAt(player.mesh.position.clone().add(new V3(0,0.6,0)));
+
+  if(nightMode){
+    const dir = new V3(Math.sin(player.heading),0,-Math.cos(player.heading));
+    const leftPos = player.wheels[2].getWorldPosition(new V3());
+    const rightPos = player.wheels[3].getWorldPosition(new V3());
+    headLightL.position.copy(leftPos).add(new V3(0,0.2,0));
+    headLightR.position.copy(rightPos).add(new V3(0,0.2,0));
+    headLightL.target.position.copy(leftPos.clone().add(dir.clone().multiplyScalar(10)));
+    headLightR.target.position.copy(rightPos.clone().add(dir.clone().multiplyScalar(10)));
+    scene.add(headLightL.target);
+    scene.add(headLightR.target);
+  }
 
   hudLap.textContent = `Lap: ${player.lap} / ${lapTarget}`;
   const standings = allCars.map(c=>{
