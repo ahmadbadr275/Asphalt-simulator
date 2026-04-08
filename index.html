@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Custom Racer – Full Fixed & Upgraded</title>
+<title>Custom Racer – Fixed Camera & Steering</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
@@ -1374,7 +1374,7 @@ function resetCars(){
   copsSurvivalTime=0;
 }
 
-/* PLAYER PHYSICS – STEERING FIXED */
+/* PLAYER PHYSICS – STEERING + CAMERA-FORWARD MATCHED */
 
 const boostFill=document.getElementById('boostFill');
 const damageFill=document.getElementById('damageFill');
@@ -1423,6 +1423,7 @@ function updatePlayer(dt){
   const q=new Q().setFromAxisAngle(new V3(0,1,0),player.heading);
   player.mesh.quaternion.slerp(q,Math.min(1,18*dt));
 
+  // Forward is +Z in local space
   const forward=new V3(0,0,1).applyQuaternion(player.mesh.quaternion);
 
   const drift=0.5*speedNorm*Math.abs(player.steer);
@@ -1700,7 +1701,10 @@ let cameraLagFactor=2.5;
 function applyCamera(dt){
   const maxFwd=player.maxSpeed*1.4;
   const speedNorm=maxFwd>0?Math.min(1,Math.abs(player.speed)/maxFwd):0;
-  const baseOffset=new V3(0,4.2,10+4*speedNorm).applyQuaternion(player.mesh.quaternion);
+
+  // CAMERA FIX: behind the car (negative Z in local space)
+  const baseOffset=new V3(0,4.2,-10-4*speedNorm).applyQuaternion(player.mesh.quaternion);
+
   const desired=player.mesh.position.clone().add(baseOffset);
   if(cameraLagPos.lengthSq()===0) cameraLagPos.copy(desired);
   const lerpFactor=Math.min(1,cameraLagFactor*dt);
