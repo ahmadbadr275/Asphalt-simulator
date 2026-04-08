@@ -728,49 +728,36 @@ function buildRoad(spline,width=7,segments=600){
 }
 
 /* TRACK WALLS */
+function resolveWallCollision(car, wallPos, minDist = 3.5) {
+  const dx = car.pos.x - wallPos.x;
+  const dz = car.pos.z - wallPos.z;
+  const dist = Math.sqrt(dx*dx + dz*dz);
 
-function buildTrackWalls(spline,width=7,segments=120){
-  trackWalls.forEach(w=>scene.remove(w));
-  trackWalls=[];
-  const wallMat=new THREE.MeshStandardMaterial({
-    color:0x0f172a,
-    roughness:0.5,
-    metalness:0.2
-  });
-  const half=width*0.5;
-  for(let i=0;i<segments;i++){
-    const t1=i/segments;
-    const t2=(i+1)/segments;
-    const p1=spline.getPointAt(t1);
-    const p2=spline.getPointAt(t2);
-    const tan=p2.clone().sub(p1).normalize();
-    const bin=new V3().crossVectors(new V3(0,1,0),tan).normalize();
+  if (dist < minDist) {
 
-    const leftMid=p1.clone().add(p2).multiplyScalar(0.5)
-      .add(bin.clone().multiplyScalar(-half-0.4));
-    const rightMid=p1.clone().add(p2).multiplyScalar(0.5)
-      .add(bin.clone().multiplyScalar(half+0.4));
+    // Direction to push the car OUT of the wall
+    const dir = new THREE.Vector3(dx, 0, dz).normalize();
 
-    const segLen=p1.distanceTo(p2)+0.2;
-    const wallGeo=new THREE.BoxGeometry(segLen,1.6,0.4);
+    // Push car outward
+    const pushAmount = (minDist - dist) * 1.25;
+    car.pos.add(dir.multiplyScalar(pushAmount));
 
-    const leftWall=new THREE.Mesh(wallGeo,wallMat);
-    leftWall.position.copy(leftMid);
-    leftWall.position.y=0.8;
-    leftWall.lookAt(leftMid.clone().add(tan));
-    leftWall.castShadow=true;
-    leftWall.receiveShadow=true;
-    scene.add(leftWall);
-    trackWalls.push(leftWall);
+    // Give a small bounce so it never sticks
+    if (car.speed < 0.15) {
+      car.speed = 0.15;
+    }
 
-    const rightWall=new THREE.Mesh(wallGeo,wallMat);
-    rightWall.position.copy(rightMid);
-    rightWall.position.y=0.8;
-    rightWall.lookAt(rightMid.clone().add(tan));
-    rightWall.castShadow=true;
-    rightWall.receiveShadow=true;
-    scene.add(rightWall);
-    trackWalls.push(rightWall);
+    // Reduce speed slightly on impact
+    car.speed *= 0.85;
+
+    // Add damage
+    car.damage = Math.min(1, car.damage + 0.02);
+
+    // Camera shake
+    cameraShakeTimer = 0.12;
+
+    // Crash sparks
+    addCrashParticles(car.pos.clone());
   }
 }
 
@@ -1147,18 +1134,22 @@ function makeCarMesh(type){
 }
 
 /* NITRO FLAMES */
+function updateFlames(car, boosting, dt){
+  if(!car.flames) return;
 
-function attachFlamesToCar(car){
-  const flameGeo=new THREE.ConeGeometry(0.15,0.6,8);
-  const flameMat=new THREE.MeshBasicMaterial({color:0xf97316,transparent:true,opacity:0.0});
-  const f1=new THREE.Mesh(flameGeo,flameMat);
-  const f2=f1.clone();
-  f1.rotation.x=Math.PI;
-  f2.rotation.x=Math.PI;
-  f1.position.set(0.35,0.35,-1.9);
-  f2.position.set(-0.35,0.35,-1.9);
-  car.mesh.add(f1);car.mesh.add(f2);
-  car.flames=[f1,f2];
+  const targetOpacity = boosting ? 1.0 : 0.0;
+
+  car.flames.forEach(f => {
+    // Smooth fade
+    f.material.opacity += (targetOpacity - f.material.opacity) * Math.min(1, dt * 12);
+
+    // Flame flicker when boosting
+    if(boosting){
+      f.scale.setScalar(1 + Math.random() * 0.5);
+    } else {
+      f.scale.setScalar(1);
+    }
+  });
 }
 
 /* CAR STATE */
@@ -2084,60 +2075,52 @@ function drawMinimap(){
 }
 
 /* START / PAUSE / RESET */
-
-startBtn.addEventListener('click',()=>{runCountdown();});
-pauseBtn.addEventListener('click',()=>{
-  if(!raceStarted) return;
-  paused=!paused;
-  pauseBtn.textContent=paused?'Resume':'Pause';
-});
-resetBtn.addEventListener('click',()=>{
-  running=false;paused=false;raceStarted=false;
-  applyTrack(trackSelect.value);
-  showToast('Reset');
-});
-lapCountSelect.addEventListener('change',()=>{
-  lapTarget=parseInt(lapCountSelect.value,10);
-  hudLap.textContent=`Lap: ${player.lap} / ${lapTarget}`;
-});
-trackSelect.addEventListener('change',()=>{
-  applyTrack(trackSelect.value);
-  showToast('Track changed');
-});
-window.addEventListener('keydown',e=>{
-  if(e.key.toLowerCase()==='r') quickResetPlayer();
-});
-
-function quickResetPlayer(){
-  if(gameMode==='cops'){
-    placeCarInArena(player,10);
-  }else{
-    const nearest=nearestCenterPoint(player.pos);
-    placeCarOnSpline(player,nearest.t,0);
-  }
-  player.speed=0;
-  showToast('Reset');
-}
-
 async function runCountdown(){
   if(countdownRunning) return;
-  countdownRunning=true;
-  running=false;paused=false;raceStarted=false;
-  lights.forEach(l=>{l.classList.remove('on');l.style.display='block';});
+
+  // Reset states BEFORE countdown
+  countdownRunning = true;
+  running = false;
+  paused = false;
+  raceStarted = false;
+
+  // Reset timer display immediately
+  hudTimer.textContent = "Time: 0.000";
+
+  // Reset lap timer
+  currentLapStartTime = 0;
+  sessionStartTime = 0;
+
+  // Reset lights
+  lights.forEach(l=>{
+    l.classList.remove('on');
+    l.style.display='block';
+  });
+
   banner.style.display='none';
+
+  // 5–4–3–2–1 lights
   for(let i=0;i<5;i++){
     lights[i].classList.add('on');
     await new Promise(r=>setTimeout(r,650));
   }
+
+  // Hide lights
   lights.forEach(l=>l.style.display='none');
+
+  // GO!
   banner.textContent='GO!';
   banner.style.display='block';
   setTimeout(()=>banner.style.display='none',800);
-  raceStarted=true;
-  running=true;
-  countdownRunning=false;
-  currentLapStartTime=performance.now();
-  sessionStartTime=performance.now();
+
+  // Start race NOW
+  raceStarted = true;
+  running = true;
+  countdownRunning = false;
+
+  // ⭐ FIX: Timer starts EXACTLY at GO
+  sessionStartTime = performance.now();
+  currentLapStartTime = sessionStartTime;
 }
 
 /* APPLY TRACK + INIT */
