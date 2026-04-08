@@ -2,17 +2,18 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Ultimate Racer – Real Cars, Slower, Correct Front</title>
+<title>Ultimate Racer – Garage, Real Cars, Drift, Boost</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
 
 <style>
   :root{
-    --ui-bg:rgba(6,10,20,0.82);
+    --ui-bg:rgba(6,10,20,0.9);
     --muted:#cbd5e1;
     --accent:#38bdf8;
     --danger:#ef4444;
+    --good:#22c55e;
   }
   html,body{
     margin:0;
@@ -200,6 +201,111 @@
     display:none;
     z-index:50;
   }
+
+  /* Garage overlay */
+  #garage{
+    position:fixed;
+    inset:0;
+    background:radial-gradient(circle at top,#0f172a 0,#020617 55%,#000 100%);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:flex-start;
+    padding-top:40px;
+    z-index:60;
+  }
+  #garageTitle{
+    font-size:20px;
+    letter-spacing:0.12em;
+    text-transform:uppercase;
+    color:#e5e7eb;
+    margin-bottom:10px;
+  }
+  #garageRow{
+    display:flex;
+    gap:14px;
+    margin-bottom:10px;
+    flex-wrap:wrap;
+    justify-content:center;
+  }
+  .carCard{
+    width:130px;
+    padding:8px;
+    border-radius:12px;
+    background:rgba(15,23,42,0.96);
+    border:1px solid rgba(148,163,184,0.7);
+    cursor:pointer;
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+  }
+  .carName{
+    font-size:11px;
+    text-transform:uppercase;
+    letter-spacing:0.08em;
+  }
+  .statRow{
+    font-size:9px;
+    color:var(--muted);
+    display:flex;
+    justify-content:space-between;
+  }
+  .statBar{
+    width:100%;
+    height:4px;
+    border-radius:999px;
+    background:#020617;
+    overflow:hidden;
+  }
+  .statFill{
+    height:100%;
+    border-radius:999px;
+    background:linear-gradient(90deg,#22c55e,#eab308,#ef4444);
+  }
+  .carCard.selected{
+    border-color:var(--accent);
+    box-shadow:0 0 0 1px rgba(56,189,248,0.5);
+  }
+  #garageBottom{
+    margin-top:10px;
+    display:flex;
+    gap:10px;
+    align-items:center;
+    flex-wrap:wrap;
+    justify-content:center;
+  }
+  #garageHint{
+    font-size:11px;
+    color:var(--muted);
+  }
+  #garageStartBtn{
+    padding:6px 14px;
+    border-radius:999px;
+    border:1px solid var(--accent);
+    background:rgba(15,23,42,0.96);
+    color:var(--accent);
+    font-size:12px;
+    cursor:pointer;
+  }
+
+  /* Mini-map */
+  #minimap{
+    position:fixed;
+    left:10px;
+    bottom:10px;
+    width:140px;
+    height:140px;
+    border-radius:16px;
+    background:rgba(15,23,42,0.96);
+    border:1px solid rgba(148,163,184,0.7);
+    overflow:hidden;
+    z-index:25;
+  }
+  #minimapCanvas{
+    width:100%;
+    height:100%;
+    display:block;
+  }
 </style>
 </head>
 <body>
@@ -213,17 +319,6 @@
       <option value="figure8">Figure 8</option>
       <option value="oval">Oval</option>
       <option value="city">City</option>
-    </select>
-
-    <label>Car</label>
-    <select id="carSelect">
-      <option value="ferrari">Ferrari F8</option>
-      <option value="bugatti">Bugatti Chiron</option>
-      <option value="porsche">Porsche 911</option>
-      <option value="lambo">Lamborghini Huracán</option>
-      <option value="gtr">Nissan GTR</option>
-      <option value="bmw">BMW M4</option>
-      <option value="supra">Toyota Supra</option>
     </select>
 
     <label>AI</label>
@@ -287,6 +382,84 @@
 <div id="boostBar"><div id="boostFill"></div></div>
 
 <div id="toast"></div>
+
+<div id="minimap">
+  <canvas id="minimapCanvas"></canvas>
+</div>
+
+<!-- Garage overlay -->
+<div id="garage">
+  <div id="garageTitle">GARAGE</div>
+  <div id="garageRow">
+    <div class="carCard" data-car="ferrari">
+      <div class="carName">Ferrari F8</div>
+      <div class="statRow"><span>Speed</span><span>★★★★☆</span></div>
+      <div class="statBar"><div class="statFill" style="width:82%;"></div></div>
+      <div class="statRow"><span>Grip</span><span>★★★☆☆</span></div>
+      <div class="statBar"><div class="statFill" style="width:60%;"></div></div>
+      <div class="statRow"><span>Boost</span><span>★★★☆☆</span></div>
+      <div class="statBar"><div class="statFill" style="width:65%;"></div></div>
+    </div>
+    <div class="carCard" data-car="bugatti">
+      <div class="carName">Bugatti Chiron</div>
+      <div class="statRow"><span>Speed</span><span>★★★★★</span></div>
+      <div class="statBar"><div class="statFill" style="width:96%;"></div></div>
+      <div class="statRow"><span>Grip</span><span>★★★☆☆</span></div>
+      <div class="statBar"><div class="statFill" style="width:55%;"></div></div>
+      <div class="statRow"><span>Boost</span><span>★★★★☆</span></div>
+      <div class="statBar"><div class="statFill" style="width:80%;"></div></div>
+    </div>
+    <div class="carCard" data-car="porsche">
+      <div class="carName">Porsche 911</div>
+      <div class="statRow"><span>Speed</span><span>★★★★☆</span></div>
+      <div class="statBar"><div class="statFill" style="width:78%;"></div></div>
+      <div class="statRow"><span>Grip</span><span>★★★★★</span></div>
+      <div class="statBar"><div class="statFill" style="width:96%;"></div></div>
+      <div class="statRow"><span>Boost</span><span>★★★☆☆</span></div>
+      <div class="statBar"><div class="statFill" style="width:70%;"></div></div>
+    </div>
+    <div class="carCard" data-car="lambo">
+      <div class="carName">Lamborghini Huracán</div>
+      <div class="statRow"><span>Speed</span><span>★★★★☆</span></div>
+      <div class="statBar"><div class="statFill" style="width:84%;"></div></div>
+      <div class="statRow"><span>Grip</span><span>★★★☆☆</span></div>
+      <div class="statBar"><div class="statFill" style="width:68%;"></div></div>
+      <div class="statRow"><span>Boost</span><span>★★★★☆</span></div>
+      <div class="statBar"><div class="statFill" style="width:82%;"></div></div>
+    </div>
+    <div class="carCard" data-car="gtr">
+      <div class="carName">Nissan GTR</div>
+      <div class="statRow"><span>Speed</span><span>★★★☆☆</span></div>
+      <div class="statBar"><div class="statFill" style="width:72%;"></div></div>
+      <div class="statRow"><span>Grip</span><span>★★★★☆</span></div>
+      <div class="statBar"><div class="statFill" style="width:86%;"></div></div>
+      <div class="statRow"><span>Boost</span><span>★★★☆☆</span></div>
+      <div class="statBar"><div class="statFill" style="width:68%;"></div></div>
+    </div>
+    <div class="carCard" data-car="bmw">
+      <div class="carName">BMW M4</div>
+      <div class="statRow"><span>Speed</span><span>★★★☆☆</span></div>
+      <div class="statBar"><div class="statFill" style="width:70%;"></div></div>
+      <div class="statRow"><span>Grip</span><span>★★★☆☆</span></div>
+      <div class="statBar"><div class="statFill" style="width:74%;"></div></div>
+      <div class="statRow"><span>Boost</span><span>★★★☆☆</span></div>
+      <div class="statBar"><div class="statFill" style="width:66%;"></div></div>
+    </div>
+    <div class="carCard" data-car="supra">
+      <div class="carName">Toyota Supra</div>
+      <div class="statRow"><span>Speed</span><span>★★★☆☆</span></div>
+      <div class="statBar"><div class="statFill" style="width:68%;"></div></div>
+      <div class="statRow"><span>Grip</span><span>★★★☆☆</span></div>
+      <div class="statBar"><div class="statFill" style="width:70%;"></div></div>
+      <div class="statRow"><span>Boost</span><span>★★★★☆</span></div>
+      <div class="statBar"><div class="statFill" style="width:84%;"></div></div>
+    </div>
+  </div>
+  <div id="garageBottom">
+    <div id="garageHint">Tap a car, then press START RACE</div>
+    <button id="garageStartBtn">Start Race</button>
+  </div>
+</div>
 
 <script>
 const V3 = THREE.Vector3;
@@ -427,6 +600,9 @@ function nearestCenterPoint(pos){
   }
   return {point:best.p.clone(),t:best.t};
 }
+/* ============================
+   CAR MESH + PHYSICS SECTION
+   ============================ */
 
 function makeCarMesh(type){
   const group=new THREE.Group();
@@ -523,6 +699,10 @@ function createCarState(mesh,wheels,opts){
   };
 }
 
+/* ============================
+   SKID, SMOKE, CRASH EFFECTS
+   ============================ */
+
 const skidGroup=new THREE.Group();
 scene.add(skidGroup);
 const smokeGroup=new THREE.Group();
@@ -566,6 +746,10 @@ function addCrashParticles(pos){
   }
 }
 
+/* ============================
+   PLAYER + AI LOGIC
+   ============================ */
+
 let player=null;
 let cpuCars=[];
 let allCars=[];
@@ -600,38 +784,32 @@ window.addEventListener('deviceorientation',e=>{
   tiltSteer=Math.max(-1,Math.min(1,gamma/25));
 });
 
-const trackSelect=document.getElementById('trackSelect');
-const carSelect=document.getElementById('carSelect');
-const aiCountSelect=document.getElementById('aiCount');
-const lapCountSelect=document.getElementById('lapCount');
-const tiltModeSelect=document.getElementById('tiltMode');
-const startBtn=document.getElementById('startBtn');
-const pauseBtn=document.getElementById('pauseBtn');
-const resetBtn=document.getElementById('resetBtn');
-const hudLap=document.getElementById('hudLap');
-const hudPos=document.getElementById('hudPos');
-const hudSpeed=document.getElementById('hudSpeed');
-const hudBest=document.getElementById('hudBest');
-const lights=[l1,l2,l3,l4,l5];
-const banner=document.getElementById('bannerText');
-const boostFill=document.getElementById('boostFill');
-const damageFill=document.getElementById('damageFill');
-const fuelFill=document.getElementById('fuelFill');
-const toast=document.getElementById('toast');
+/* ============================
+   GARAGE LOGIC
+   ============================ */
 
-let running=false,paused=false,raceStarted=false,countdownRunning=false;
-let bestLap=null,currentLapStartTime=null,sessionStartTime=performance.now();
-let cameraLagPos=new V3();
-let cameraShakeTimer=0;
-let steeringSensitivity=1.0;
-let driftAmount=0.5;
-let cameraLagFactor=2.5;
+let selectedCar="ferrari";
+const garage=document.getElementById("garage");
+const garageStartBtn=document.getElementById("garageStartBtn");
+const carCards=document.querySelectorAll(".carCard");
 
-function showToast(msg,ms=1500){
-  toast.textContent=msg;
-  toast.style.display='block';
-  setTimeout(()=>toast.style.display='none',ms);
-}
+carCards.forEach(card=>{
+  card.addEventListener("click",()=>{
+    carCards.forEach(c=>c.classList.remove("selected"));
+    card.classList.add("selected");
+    selectedCar=card.dataset.car;
+  });
+});
+
+garageStartBtn.addEventListener("click",()=>{
+  garage.style.display="none";
+  carSelect.value=selectedCar;
+  resetCars();
+});
+
+/* ============================
+   CAR STATS
+   ============================ */
 
 function carStatsFor(type){
   if(type==='ferrari') return {maxSpeed:0.28,accel:0.38,grip:0.7};
@@ -643,6 +821,10 @@ function carStatsFor(type){
   if(type==='supra') return {maxSpeed:0.24,accel:0.32,grip:0.7};
   return {maxSpeed:0.25,accel:0.33,grip:0.7};
 }
+
+/* ============================
+   RESET + TRACK + AI
+   ============================ */
 
 function placeCarOnSpline(state,t,laneOffset=0){
   const center=spline.getPointAt(t);
@@ -668,7 +850,7 @@ function placeCarOnSpline(state,t,laneOffset=0){
 function resetCars(){
   allCars.forEach(c=>scene.remove(c.mesh));
   allCars=[];cpuCars=[];
-  const type=carSelect.value;
+  const type=selectedCar;
   const stats=carStatsFor(type);
   const {group:wMesh,wheels:wWheels}=makeCarMesh(type);
   scene.add(wMesh);
@@ -720,116 +902,9 @@ function resetCars(){
   fuelFill.style.width='100%';
 }
 
-function applyTrack(name){
-  if(name==='classic') spline=buildClassic();
-  else if(name==='figure8') spline=buildFigure8();
-  else if(name==='oval') spline=buildOval();
-  else spline=buildCity();
-  buildRoad(spline);
-  buildCenterSamples(spline);
-  resetCars();
-}
-
-trackSelect.addEventListener('change',()=>{applyTrack(trackSelect.value);showToast('Track changed');});
-carSelect.addEventListener('change',()=>{resetCars();showToast('Car changed');});
-aiCountSelect.addEventListener('change',()=>{resetCars();showToast('AI updated');});
-lapCountSelect.addEventListener('change',()=>{
-  lapTarget=parseInt(lapCountSelect.value,10);
-  hudLap.textContent=`Lap: ${player.lap} / ${lapTarget}`;
-});
-tiltModeSelect.addEventListener('change',()=>{
-  tiltMode=tiltModeSelect.value==='on';
-  showToast('Tilt '+(tiltMode?'On':'Off'));
-});
-
-startBtn.addEventListener('click',()=>{runCountdown();});
-pauseBtn.addEventListener('click',()=>{
-  if(!raceStarted) return;
-  paused=!paused;
-  pauseBtn.textContent=paused?'Resume':'Pause';
-});
-resetBtn.addEventListener('click',()=>{
-  running=false;paused=false;raceStarted=false;
-  applyTrack(trackSelect.value);
-  showToast('Reset');
-});
-
-window.addEventListener('keydown',e=>{
-  if(e.key.toLowerCase()==='r') quickResetPlayer();
-});
-
-async function runCountdown(){
-  if(countdownRunning) return;
-  countdownRunning=true;
-  running=false;paused=false;raceStarted=false;
-  lights.forEach(l=>{l.classList.remove('on');l.style.display='block';});
-  banner.style.display='none';
-  for(let i=0;i<5;i++){
-    lights[i].classList.add('on');
-    await new Promise(r=>setTimeout(r,650));
-  }
-  lights.forEach(l=>l.style.display='none');
-  banner.textContent='GO!';
-  banner.style.display='block';
-  setTimeout(()=>banner.style.display='none',800);
-  raceStarted=true;
-  running=true;
-  countdownRunning=false;
-  currentLapStartTime=performance.now();
-  sessionStartTime=performance.now();
-}
-
-function quickResetPlayer(){
-  const nearest=nearestCenterPoint(player.pos);
-  placeCarOnSpline(player,nearest.t,0);
-  player.speed=0;
-  showToast('Reset to track');
-}
-
-let checkpoints=[];
-function buildCheckpoints(count=12){
-  checkpoints=[];
-  for(let i=0;i<count;i++){
-    const t=i/count;
-    checkpoints.push({t,p:spline.getPointAt(t)});
-  }
-}
-buildCheckpoints();
-
-function handleCheckpoints(car,t){
-  let nearestIdx=car.lastCheckpoint;
-  let bestDist=Infinity;
-  for(let i=0;i<checkpoints.length;i++){
-    const d=car.mesh.position.distanceToSquared(checkpoints[i].p);
-    if(d<bestDist){bestDist=d;nearestIdx=i;}
-  }
-  if(nearestIdx!==car.lastCheckpoint){
-    const expected=(car.lastCheckpoint+1)%checkpoints.length;
-    if(nearestIdx===expected){
-      car.lastCheckpoint=nearestIdx;
-      if(nearestIdx===0){
-        car.lap++;
-        if(car===player){
-          const now=performance.now();
-          if(currentLapStartTime){
-            const lapTime=(now-currentLapStartTime)/1000;
-            if(bestLap===null||lapTime<bestLap){
-              bestLap=lapTime;
-              hudBest.textContent='Best: '+lapTime.toFixed(3);
-            }
-          }
-          currentLapStartTime=now;
-          if(car.lap>=lapTarget){
-            running=false;
-            banner.textContent='FINISHED!';
-            banner.style.display='block';
-            setTimeout(()=>banner.style.display='none',2000);
-          }
-        }
-      }
-    }
-  }
-}
+/* ============================
+   PLAYER PHYSICS
+   ============================ */
 
 function updatePlayer(dt){
   const forwardKey=keys['w']||keys['arrowup']||touchForward;
@@ -846,7 +921,7 @@ function updatePlayer(dt){
     if(leftKey&&!rightKey) steerInput=-1;
     else if(rightKey&&!leftKey) steerInput=1;
   }
-  player.steer=steerInput*steeringSensitivity;
+  player.steer=steerInput;
 
   if(boostKey&&player.boost>0){
     player.boost-=dt*0.25;
@@ -879,7 +954,7 @@ function updatePlayer(dt){
   player.mesh.quaternion.slerp(q,Math.min(1,18*dt));
 
   const forward=new V3(0,0,-1).applyQuaternion(player.mesh.quaternion);
-  const drift=driftAmount*speedNorm*Math.abs(player.steer);
+  const drift=0.5*speedNorm*Math.abs(player.steer);
   const lateral=new V3(-forward.z,0,forward.x).multiplyScalar(drift);
   const moveDir=forward.clone().add(lateral).normalize();
 
@@ -928,6 +1003,10 @@ function updatePlayer(dt){
   handleCheckpoints(player,nearest.t);
 }
 
+/* ============================
+   AI PHYSICS
+   ============================ */
+
 function updateAI(dt){
   const len=spline.getLength();
   for(const c of cpuCars){
@@ -936,7 +1015,7 @@ function updateAI(dt){
     const curTan=spline.getTangentAt(c.tOnSpline).normalize();
     const futTan=spline.getTangentAt(futureT).normalize();
     const angleDiff=Math.acos(Math.max(-1,Math.min(1,curTan.dot(futTan))));
-    const curvatureFactor=1-Math.min(1,angleDiff*6);
+        const curvatureFactor=1-Math.min(1,angleDiff*6);
     let targetSpeed=c.maxSpeed*(0.6+0.4*curvatureFactor);
     for(const other of allCars){
       if(other===c) continue;
@@ -962,6 +1041,10 @@ function updateAI(dt){
   }
 }
 
+/* ============================
+   SMOKE + CRASH UPDATE
+   ============================ */
+
 function updateSmoke(dt){
   for(let i=smokeGroup.children.length-1;i>=0;i--){
     const s=smokeGroup.children[i];
@@ -984,6 +1067,15 @@ function updateCrashParticles(dt){
   }
 }
 
+/* ============================
+   CAMERA + HUD
+   ============================ */
+
+let cameraLagPos=new V3();
+let cameraShakeTimer=0;
+let steeringSensitivity=1.0;
+let cameraLagFactor=2.5;
+
 function applyCamera(dt){
   const maxFwd=player.maxSpeed*1.4;
   const speedNorm=maxFwd>0?Math.min(1,Math.abs(player.speed)/maxFwd):0;
@@ -1003,6 +1095,23 @@ function applyCamera(dt){
   camera.lookAt(player.mesh.position.clone().add(new V3(0,0.6,0)));
 }
 
+const hudLap=document.getElementById('hudLap');
+const hudPos=document.getElementById('hudPos');
+const hudSpeed=document.getElementById('hudSpeed');
+const hudBest=document.getElementById('hudBest');
+const boostFill=document.getElementById('boostFill');
+const damageFill=document.getElementById('damageFill');
+const fuelFill=document.getElementById('fuelFill');
+const toast=document.getElementById('toast');
+
+let bestLap=null,currentLapStartTime=null,sessionStartTime=performance.now();
+
+function showToast(msg,ms=1500){
+  toast.textContent=msg;
+  toast.style.display='block';
+  setTimeout(()=>toast.style.display='none',ms);
+}
+
 function updateHUD(){
   hudLap.textContent=`Lap: ${player.lap} / ${lapTarget}`;
   const standings=allCars.map(c=>{
@@ -1013,6 +1122,189 @@ function updateHUD(){
   hudPos.textContent=`Pos: ${pos} / ${allCars.length}`;
   hudSpeed.textContent=`Speed: ${(player.speed*60).toFixed(1)}`;
 }
+
+/* ============================
+   CHECKPOINTS + LAPS
+   ============================ */
+
+let checkpoints=[];
+function buildCheckpoints(count=12){
+  checkpoints=[];
+  for(let i=0;i<count;i++){
+    const t=i/count;
+    checkpoints.push({t,p:spline.getPointAt(t)});
+  }
+}
+buildCheckpoints();
+
+function handleCheckpoints(car,t){
+  let nearestIdx=car.lastCheckpoint;
+  let bestDist=Infinity;
+  for(let i=0;i<checkpoints.length;i++){
+    const d=car.mesh.position.distanceToSquared(checkpoints[i].p);
+    if(d<bestDist){bestDist=d;nearestIdx=i;}
+  }
+  if(nearestIdx!==car.lastCheckpoint){
+    const expected=(car.lastCheckpoint+1)%checkpoints.length;
+    if(nearestIdx===expected){
+      car.lastCheckpoint=nearestIdx;
+      if(nearestIdx===0){
+        car.lap++;
+        if(car===player){
+          const now=performance.now();
+          if(currentLapStartTime){
+            const lapTime=(now-currentLapStartTime)/1000;
+            if(bestLap===null||lapTime<bestLap){
+              bestLap=lapTime;
+              hudBest.textContent='Best: '+lapTime.toFixed(3);
+            }
+          }
+          currentLapStartTime=now;
+          if(car.lap>=lapTarget){
+            running=false;
+            banner.textContent='FINISHED!';
+            banner.style.display='block';
+            setTimeout(()=>banner.style.display='none',2000);
+          }
+        }
+      }
+    }
+  }
+}
+
+/* ============================
+   MINIMAP
+   ============================ */
+
+const minimapCanvas=document.getElementById('minimapCanvas');
+const mmCtx=minimapCanvas.getContext('2d');
+function resizeMinimap(){
+  const rect=minimapCanvas.getBoundingClientRect();
+  minimapCanvas.width=rect.width*2;
+  minimapCanvas.height=rect.height*2;
+}
+resizeMinimap();
+window.addEventListener('resize',resizeMinimap);
+
+function drawMinimap(){
+  const w=minimapCanvas.width;
+  const h=minimapCanvas.height;
+  mmCtx.clearRect(0,0,w,h);
+  mmCtx.save();
+  mmCtx.translate(w/2,h/2);
+  const scale=3;
+  mmCtx.scale(scale,scale);
+
+  mmCtx.strokeStyle='#1f2937';
+  mmCtx.lineWidth=4/scale;
+  mmCtx.beginPath();
+  const steps=200;
+  for(let i=0;i<=steps;i++){
+    const t=i/steps;
+    const p=spline.getPointAt(t);
+    const x=p.x,y=p.z;
+    if(i===0) mmCtx.moveTo(x,y);
+    else mmCtx.lineTo(x,y);
+  }
+  mmCtx.stroke();
+
+  for(const c of allCars){
+    const isPlayer=c===player;
+    mmCtx.fillStyle=isPlayer?'#22c55e':'#e5e7eb';
+    mmCtx.beginPath();
+    mmCtx.arc(c.pos.x,c.pos.z,isPlayer?2.4:1.8,0,Math.PI*2);
+    mmCtx.fill();
+  }
+
+  mmCtx.restore();
+}
+
+/* ============================
+   START / PAUSE / RESET / TRACK
+   ============================ */
+
+const trackSelect=document.getElementById('trackSelect');
+const aiCountSelect=document.getElementById('aiCount');
+const lapCountSelect=document.getElementById('lapCount');
+const tiltModeSelect=document.getElementById('tiltMode');
+const startBtn=document.getElementById('startBtn');
+const pauseBtn=document.getElementById('pauseBtn');
+const resetBtn=document.getElementById('resetBtn');
+const lights=[l1,l2,l3,l4,l5];
+const banner=document.getElementById('bannerText');
+
+let running=false,paused=false,raceStarted=false,countdownRunning=false;
+
+function applyTrack(name){
+  if(name==='classic') spline=buildClassic();
+  else if(name==='figure8') spline=buildFigure8();
+  else if(name==='oval') spline=buildOval();
+  else spline=buildCity();
+  buildRoad(spline);
+  buildCenterSamples(spline);
+  buildCheckpoints();
+  resetCars();
+}
+
+startBtn.addEventListener('click',()=>{runCountdown();});
+pauseBtn.addEventListener('click',()=>{
+  if(!raceStarted) return;
+  paused=!paused;
+  pauseBtn.textContent=paused?'Resume':'Pause';
+});
+resetBtn.addEventListener('click',()=>{
+  running=false;paused=false;raceStarted=false;
+  applyTrack(trackSelect.value);
+  showToast('Reset');
+});
+lapCountSelect.addEventListener('change',()=>{
+  lapTarget=parseInt(lapCountSelect.value,10);
+  hudLap.textContent=`Lap: ${player.lap} / ${lapTarget}`;
+});
+tiltModeSelect.addEventListener('change',()=>{
+  tiltMode=tiltModeSelect.value==='on';
+  showToast('Tilt '+(tiltMode?'On':'Off'));
+});
+trackSelect.addEventListener('change',()=>{
+  applyTrack(trackSelect.value);
+  showToast('Track changed');
+});
+
+window.addEventListener('keydown',e=>{
+  if(e.key.toLowerCase()==='r') quickResetPlayer();
+});
+
+function quickResetPlayer(){
+  const nearest=nearestCenterPoint(player.pos);
+  placeCarOnSpline(player,nearest.t,0);
+  player.speed=0;
+  showToast('Reset to track');
+}
+
+async function runCountdown(){
+  if(countdownRunning) return;
+  countdownRunning=true;
+  running=false;paused=false;raceStarted=false;
+  lights.forEach(l=>{l.classList.remove('on');l.style.display='block';});
+  banner.style.display='none';
+  for(let i=0;i<5;i++){
+    lights[i].classList.add('on');
+    await new Promise(r=>setTimeout(r,650));
+  }
+  lights.forEach(l=>l.style.display='none');
+  banner.textContent='GO!';
+  banner.style.display='block';
+  setTimeout(()=>banner.style.display='none',800);
+  raceStarted=true;
+  running=true;
+  countdownRunning=false;
+  currentLapStartTime=performance.now();
+  sessionStartTime=performance.now();
+}
+
+/* ============================
+   MAIN LOOP
+   ============================ */
 
 let lastTime=performance.now();
 function loop(){
@@ -1028,10 +1320,15 @@ function loop(){
   updateCrashParticles(dt);
   applyCamera(dt);
   updateHUD();
+  drawMinimap();
 
   renderer.render(scene,camera);
   requestAnimationFrame(loop);
 }
+
+/* ============================
+   INIT
+   ============================ */
 
 applyTrack('classic');
 lapTarget=parseInt(lapCountSelect.value,10);
@@ -1042,6 +1339,7 @@ window.addEventListener('resize',()=>{
   camera.aspect=window.innerWidth/window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth,window.innerHeight);
+  resizeMinimap();
 });
 </script>
 </body>
