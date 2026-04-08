@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Racer – Steering Fixed + Upgrades</title>
+<title>Racer – Fixed Steering + Drift + UI</title>
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
 <style>
@@ -108,7 +108,7 @@
 
   #lights{
     position:fixed;
-    top:24px;
+    top:70px; /* moved down */
     left:50%;
     transform:translateX(-50%);
     display:flex;
@@ -272,7 +272,7 @@
   #boostBar{
     position:fixed;
     left:50%;
-    bottom:90px;
+    bottom:140px; /* moved up */
     transform:translateX(-50%);
     width:160px;
     height:10px;
@@ -1003,7 +1003,22 @@ colorPicker.addEventListener('input', ()=>{
 });
 startBtn.addEventListener('click', ()=>{ runCountdown(); });
 pauseBtn.addEventListener('click', ()=>{ if(!raceStarted) return; paused = !paused; pauseBtn.textContent = paused?'Resume':'Pause'; });
-resetBtn.addEventListener('click', ()=>{ applyTrack(trackSelect.value); raceStarted=false; running=false; paused=false; });
+resetBtn.addEventListener('click', ()=>{
+  running = false;
+  paused = false;
+  raceStarted = false;
+  applyTrack(trackSelect.value);
+  placeCarOnSpline(player, startT, 0);
+  cpuCars.forEach((c,i)=>{
+    const lane = (i%2===0 ? -1 : 1) * 2.2 * (Math.floor(i/2)+1);
+    placeCarOnSpline(c, startT, lane);
+  });
+  currentLapStartTime = null;
+  bestLap = null;
+  hudLap.textContent = `Lap: 0 / ${lapTarget}`;
+  curLapTimeEl.textContent = 'Lap: 0.000';
+  bestLapTimeEl.textContent = 'Best: --';
+});
 
 garageBtn.addEventListener('click', ()=>{
   updateGarageInfo();
@@ -1032,6 +1047,7 @@ function updateTrackThumbs(name){
 
 /* Physics & AI – steering fixed, drift + boost */
 function updatePlayer(dt){
+
   const forwardKey = keys['w'] || keys['arrowup'] || touchForward;
   const backKey    = keys['s'] || keys['arrowdown'];
   const leftKey    = keys['a'] || keys['arrowleft'] || touchLeft;
@@ -1043,50 +1059,49 @@ function updatePlayer(dt){
   let steerInput = 0;
   if(tiltMode){
     steerInput = tiltSteer;
-  }else{
-    if (leftKey && !rightKey) steerInput = -1;
-    else if (rightKey && !leftKey) steerInput = 1;
+  } else {
+    if(leftKey && !rightKey) steerInput = -1;
+    else if(rightKey && !leftKey) steerInput = 1;
   }
   player.steer = steerInput;
 
   if(boostKey && player.boost > 0){
     player.boost -= dt * 0.25;
     if(player.boost < 0) player.boost = 0;
-  }else{
+  } else {
     player.boost += dt * 0.12;
     if(player.boost > 1) player.boost = 1;
   }
-  boostFill.style.width = (player.boost*100).toFixed(1)+'%';
+  boostFill.style.width = (player.boost*100)+'%';
 
-  const boostFactor = 1 + 0.7 * (boostKey && player.boost>0 ? 1 : 0);
+  const boostFactor = 1 + 0.6 * (boostKey && player.boost>0 ? 1 : 0);
 
-  if (player.throttle !== 0) {
+  if(player.throttle !== 0){
     player.speed += player.throttle * player.accel * dt * boostFactor;
   } else {
     player.speed -= player.drag * dt * Math.sign(player.speed);
   }
 
-  const maxFwd = player.maxSpeed * boostFactor;
-  const maxRev = -player.maxSpeed*0.4;
-  if(player.speed > maxFwd) player.speed = maxFwd;
-  if(player.speed < maxRev) player.speed = maxRev;
+  const maxFwd = player.maxSpeed * 0.75 * boostFactor;
+  const maxRev = -player.maxSpeed * 0.3;
+
+  player.speed = Math.min(maxFwd, Math.max(maxRev, player.speed));
   if(Math.abs(player.speed) < 0.001) player.speed = 0;
 
-  const speedNorm = Math.min(1, Math.abs(player.speed) / (player.maxSpeed*1.2));
-  const baseTurn = player.turnSpeed * (0.4 + 0.6*speedNorm);
-  const driftFactor = 1.0 + 0.6*speedNorm;
-  const turnRate = baseTurn * driftFactor;
+  const speedNorm = maxFwd > 0 ? Math.min(1, Math.abs(player.speed) / maxFwd) : 0;
+  const turnRate = player.turnSpeed * (0.45 + 0.55 * speedNorm);
 
-  player.heading += player.steer * turnRate * dt;
+  player.heading -= player.steer * turnRate * dt;
 
   const q = new Q().setFromAxisAngle(new V3(0,1,0), player.heading);
   player.mesh.quaternion.slerp(q, Math.min(1, 18*dt));
 
   const forward = new V3(0,0,-1).applyQuaternion(player.mesh.quaternion);
-  const lateralDir = new V3(-forward.z,0,forward.x).normalize();
 
-  const driftAmount = 0.35 * speedNorm * Math.abs(player.steer);
-  const moveDir = forward.clone().add(lateralDir.multiplyScalar(driftAmount)).normalize();
+  const drift = 0.45 * speedNorm * Math.abs(player.steer);
+  const lateral = new V3(-forward.z,0,forward.x).multiplyScalar(drift);
+
+  const moveDir = forward.clone().add(lateral).normalize();
 
   player.pos.add(moveDir.multiplyScalar(player.speed * dt * 60));
 
@@ -1094,12 +1109,12 @@ function updatePlayer(dt){
   const center = nearest.point;
   const tan = spline.getTangentAt(nearest.t).normalize();
   const bin = new V3().crossVectors(new V3(0,1,0), tan).normalize();
-  const lateral = player.pos.clone().sub(center).dot(bin);
+  const lateralDist = player.pos.clone().sub(center).dot(bin);
   const halfRoad = 7*0.5 - 0.5;
 
-  if(Math.abs(lateral) > halfRoad){
-    const dir = lateral > 0 ? 1 : -1;
-    player.pos.add(bin.clone().multiplyScalar((halfRoad - Math.abs(lateral)) * dir));
+  if(Math.abs(lateralDist) > halfRoad){
+    const dir = lateralDist > 0 ? 1 : -1;
+    player.pos.add(bin.clone().multiplyScalar((halfRoad - Math.abs(lateralDist)) * dir));
     player.speed *= 0.4;
     cameraShakeTimer = 0.25;
   }
@@ -1110,7 +1125,7 @@ function updatePlayer(dt){
   const wheelRot = player.speed * dt * 40;
   player.wheels.forEach(w=>{ w.rotation.x -= wheelRot; });
 
-  const slip = Math.abs(lateral) * speedNorm;
+  const slip = Math.abs(lateralDist) * speedNorm;
   if(slip > 0.4 && Math.abs(player.speed) > 0.3){
     player.skidTimer += dt;
     if(player.skidTimer > 0.03){
