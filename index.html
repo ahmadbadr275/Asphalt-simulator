@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Custom Racer – Preview & Fixed Steering</title>
+<title>Custom Racer – Modes + Change Car</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
@@ -49,6 +49,7 @@
     flex-wrap:wrap;
     gap:6px;
     z-index:20;
+    justify-content:space-between;
   }
   label{
     font-size:10px;
@@ -305,6 +306,15 @@
     font-size:12px;
     cursor:pointer;
   }
+  #garageBackBtn{
+    padding:6px 10px;
+    border-radius:999px;
+    border:1px solid rgba(148,163,184,0.7);
+    background:rgba(15,23,42,0.96);
+    color:#e5e7eb;
+    font-size:11px;
+    cursor:pointer;
+  }
 
   #garagePreviewWrap{
     margin-top:8px;
@@ -354,6 +364,19 @@
     font-size:12px;
     cursor:pointer;
   }
+
+  #modeLabel{
+    position:fixed;
+    left:50%;
+    top:6px;
+    transform:translateX(-50%);
+    background:var(--ui-bg);
+    border-radius:999px;
+    border:1px solid rgba(148,163,184,0.7);
+    padding:4px 10px;
+    font-size:11px;
+    z-index:20;
+  }
 </style>
 </head>
 <body>
@@ -387,13 +410,21 @@
     <button id="pauseBtn">Pause</button>
     <button id="resetBtn" class="danger">Reset</button>
   </div>
+
+  <div class="panel">
+    <button id="menuBtn">Menu</button>
+    <button id="changeCarBtn">Change Car</button>
+  </div>
 </div>
+
+<div id="modeLabel">Mode: Race</div>
 
 <div id="hud">
   <div id="hudLap">Lap: 0 / 3</div>
   <div id="hudPos">Pos: 1 / 1</div>
   <div id="hudSpeed">Speed: 0</div>
   <div id="hudBest">Best: --</div>
+  <div id="hudTimer">Time: 0.000</div>
 </div>
 
 <div id="extraHud">
@@ -489,6 +520,7 @@
   <div id="garageBottom">
     <div id="garageHint">Tap a car, see it above, then press START RACE</div>
     <button id="garageStartBtn">Start Race</button>
+    <button id="garageBackBtn">Back</button>
   </div>
 </div>
 
@@ -970,11 +1002,30 @@ function makeSupraStyle(){
   return {group,wheels};
 }
 
+function makePoliceCar(){
+  const {group,wheels}=makeSupraStyle();
+  group.traverse(o=>{
+    if(o.isMesh){
+      if(o.material && o.material.color){
+        o.material.color.offsetHSL(0.55,0,0);
+      }
+    }
+  });
+  const lightBar=new THREE.Mesh(
+    new THREE.BoxGeometry(0.8,0.12,0.3),
+    new THREE.MeshStandardMaterial({color:0x1d4ed8,emissive:0x1d4ed8,emissiveIntensity:1.2})
+  );
+  lightBar.position.set(0,1.1,0);
+  group.add(lightBar);
+  return {group,wheels};
+}
+
 function makeCarMesh(type){
   if(type==='ferrari') return makeFerrariStyle();
   if(type==='bugatti') return makeBugattiStyle();
   if(type==='porsche') return makePorscheStyle();
   if(type==='supra') return makeSupraStyle();
+  if(type==='police') return makePoliceCar();
   return makeFerrariStyle();
 }
 
@@ -1005,7 +1056,8 @@ function createCarState(mesh,wheels,opts){
     boost:1,
     skidTimer:0,
     laneOffset:opts.laneOffset||0,
-    overtakeTimer:0
+    overtakeTimer:0,
+    isCop:!!opts.isCop
   };
 }
 
@@ -1077,10 +1129,11 @@ bindTouch(btnRight,()=>touchRight=true,()=>touchRight=false);
 bindTouch(btnForward,()=>touchForward=true,()=>touchForward=false);
 bindTouch(btnBoost,()=>touchBoost=true,()=>touchBoost=false);
 
-/* PLAYER + AI */
+/* PLAYER + AI + COPS */
 
 let player=null;
 let cpuCars=[];
+let copCars=[];
 let allCars=[];
 let lapTarget=3;
 
@@ -1089,6 +1142,7 @@ function carStatsFor(type){
   if(type==='bugatti') return {maxSpeed:0.32,accel:0.40,grip:0.6};
   if(type==='porsche') return {maxSpeed:0.27,accel:0.36,grip:0.8};
   if(type==='supra') return {maxSpeed:0.25,accel:0.34,grip:0.72};
+  if(type==='police') return {maxSpeed:0.27,accel:0.38,grip:0.75};
   return {maxSpeed:0.25,accel:0.33,grip:0.7};
 }
 
@@ -1113,6 +1167,21 @@ function placeCarOnSpline(state,t,laneOffset=0){
   state.fuel=1;
 }
 
+function placeCarInArena(state,angleRadius=30){
+  const angle=Math.random()*Math.PI*2;
+  const r=angleRadius;
+  const x=Math.cos(angle)*r;
+  const z=Math.sin(angle)*r;
+  state.pos.set(x,0,z);
+  state.mesh.position.set(x,0.5,z);
+  state.heading=Math.atan2(-x,-z);
+  const q=new Q().setFromAxisAngle(new V3(0,1,0),state.heading);
+  state.mesh.quaternion.copy(q);
+  state.speed=0;
+}
+
+/* UI ELEMENTS */
+
 const trackSelect=document.getElementById('trackSelect');
 const aiCountSelect=document.getElementById('aiCount');
 const lapCountSelect=document.getElementById('lapCount');
@@ -1121,31 +1190,55 @@ const pauseBtn=document.getElementById('pauseBtn');
 const resetBtn=document.getElementById('resetBtn');
 const lights=[l1,l2,l3,l4,l5];
 const banner=document.getElementById('bannerText');
+const modeLabel=document.getElementById('modeLabel');
+const menuBtn=document.getElementById('menuBtn');
+const changeCarBtn=document.getElementById('changeCarBtn');
 
 let running=false,paused=false,raceStarted=false,countdownRunning=false;
 let gameMode='race';
 
 const homeScreen=document.getElementById('homeScreen');
+const garage=document.getElementById('garage');
+const garageStartBtn=document.getElementById('garageStartBtn');
+const garageBackBtn=document.getElementById('garageBackBtn');
+const carCards=document.querySelectorAll('.carCard');
+let selectedCar='ferrari';
+
 document.getElementById('modeRaceBtn').onclick=()=>{
   gameMode='race';
+  modeLabel.textContent='Mode: Race';
   homeScreen.style.display='none';
   garage.style.display='flex';
 };
 document.getElementById('modeTimeBtn').onclick=()=>{
   gameMode='time';
+  modeLabel.textContent='Mode: Time Trial';
   homeScreen.style.display='none';
   garage.style.display='flex';
 };
 document.getElementById('modeCopsBtn').onclick=()=>{
   gameMode='cops';
+  modeLabel.textContent='Mode: Escape Cops';
   homeScreen.style.display='none';
   garage.style.display='flex';
 };
 
-const garage=document.getElementById('garage');
-const garageStartBtn=document.getElementById('garageStartBtn');
-const carCards=document.querySelectorAll('.carCard');
-let selectedCar='ferrari';
+garageBackBtn.onclick=()=>{
+  garage.style.display='none';
+  homeScreen.style.display='flex';
+};
+
+menuBtn.onclick=()=>{
+  running=false;paused=false;raceStarted=false;
+  homeScreen.style.display='flex';
+  garage.style.display='none';
+};
+
+changeCarBtn.onclick=()=>{
+  running=false;paused=false;raceStarted=false;
+  garage.style.display='flex';
+  homeScreen.style.display='none';
+};
 
 carCards.forEach(card=>{
   card.addEventListener('click',()=>{
@@ -1216,9 +1309,11 @@ garageStartBtn.addEventListener('click',()=>{
   resetCars();
 });
 
+/* RESET CARS PER MODE */
+
 function resetCars(){
   allCars.forEach(c=>scene.remove(c.mesh));
-  allCars=[];cpuCars=[];
+  allCars=[];cpuCars=[];copCars=[];
   const type=selectedCar;
   const stats=carStatsFor(type);
   const {group:wMesh,wheels:wWheels}=makeCarMesh(type);
@@ -1234,34 +1329,40 @@ function resetCars(){
   });
   allCars.push(player);
 
-  const aiCount=parseInt(aiCountSelect.value,10);
-  const aiTypes=['bugatti','porsche','supra'];
-  for(let i=0;i<aiCount;i++){
-    const tType=aiTypes[i%aiTypes.length];
-    const st=carStatsFor(tType);
-    const {group:aiMesh,wheels:aiWheels}=makeCarMesh(tType);
-    scene.add(aiMesh);
-    const cs=createCarState(aiMesh,aiWheels,{
-      ai:true,
-      maxSpeed:st.maxSpeed*0.95,
-      accel:st.accel*0.9,
-      brake:2.0,
-      drag:2.0,
-      baseGrip:st.grip*5.5,
-      turnSpeed:2.2,
-      tOnSpline:0.02,
-      name:tType.toUpperCase(),
-      laneOffset:(i%2===0?-2.2:2.2)
+  if(gameMode==='race'){
+    const aiCount=parseInt(aiCountSelect.value,10);
+    const aiTypes=['bugatti','porsche','supra'];
+    for(let i=0;i<aiCount;i++){
+      const tType=aiTypes[i%aiTypes.length];
+      const st=carStatsFor(tType);
+      const {group:aiMesh,wheels:aiWheels}=makeCarMesh(tType);
+      scene.add(aiMesh);
+      const cs=createCarState(aiMesh,aiWheels,{
+        ai:true,
+        maxSpeed:st.maxSpeed*0.95,
+        accel:st.accel*0.9,
+        brake:2.0,
+        drag:2.0,
+        baseGrip:st.grip*5.5,
+        turnSpeed:2.2,
+        tOnSpline:0.02,
+        name:tType.toUpperCase(),
+        laneOffset:(i%2===0?-2.2:2.2)
+      });
+      cpuCars.push(cs);
+      allCars.push(cs);
+    }
+    placeCarOnSpline(player,0.02,0);
+    cpuCars.forEach((c,i)=>{
+      const lane=c.laneOffset;
+      placeCarOnSpline(c,0.02,lane);
     });
-    cpuCars.push(cs);
-    allCars.push(cs);
+  }else if(gameMode==='time'){
+    placeCarOnSpline(player,0.02,0);
+  }else if(gameMode==='cops'){
+    placeCarInArena(player,10);
+    spawnInitialCops();
   }
-
-  placeCarOnSpline(player,0.02,0);
-  cpuCars.forEach((c,i)=>{
-    const lane=c.laneOffset;
-    placeCarOnSpline(c,0.02,lane);
-  });
 
   bestLap=null;
   currentLapStartTime=null;
@@ -1270,6 +1371,7 @@ function resetCars(){
   hudLap.textContent=`Lap: 0 / ${lapTarget}`;
   damageFill.style.width='0%';
   fuelFill.style.width='100%';
+  copsSurvivalTime=0;
 }
 
 /* PLAYER PHYSICS (STEERING FIXED) */
@@ -1321,7 +1423,6 @@ function updatePlayer(dt){
   const q=new Q().setFromAxisAngle(new V3(0,1,0),player.heading);
   player.mesh.quaternion.slerp(q,Math.min(1,18*dt));
 
-  // FORWARD DIRECTION FIX: car faces -Z in model, so use -Z
   const forward=new V3(0,0,-1).applyQuaternion(player.mesh.quaternion);
 
   const drift=0.5*speedNorm*Math.abs(player.steer);
@@ -1330,23 +1431,26 @@ function updatePlayer(dt){
 
   player.pos.add(moveDir.multiplyScalar(player.speed*dt*60));
 
-  const nearest=nearestCenterPoint(player.pos);
-  const center=nearest.point;
-  const tan=spline.getTangentAt(nearest.t).normalize();
-  const bin=new V3().crossVectors(new V3(0,1,0),tan).normalize();
-  const lateralDist=player.pos.clone().sub(center).dot(bin);
-  const halfRoad=7*0.5-0.5;
+  if(gameMode!=='cops'){
+    const nearest=nearestCenterPoint(player.pos);
+    const center=nearest.point;
+    const tan=spline.getTangentAt(nearest.t).normalize();
+    const bin=new V3().crossVectors(new V3(0,1,0),tan).normalize();
+    const lateralDist=player.pos.clone().sub(center).dot(bin);
+    const halfRoad=7*0.5-0.5;
 
-  if(Math.abs(lateralDist)>halfRoad){
-    const dir=lateralDist>0?1:-1;
-    player.pos.add(bin.clone().multiplyScalar((halfRoad-Math.abs(lateralDist))*dir));
-    player.speed*=0.25;
-    player.damage=Math.min(1,player.damage+0.06);
-    cameraShakeTimer=0.25;
-    addCrashParticles(player.pos);
+    if(Math.abs(lateralDist)>halfRoad){
+      const dir=lateralDist>0?1:-1;
+      player.pos.add(bin.clone().multiplyScalar((halfRoad-Math.abs(lateralDist))*dir));
+      player.speed*=0.25;
+      player.damage=Math.min(1,player.damage+0.06);
+      cameraShakeTimer=0.25;
+      addCrashParticles(player.pos);
+    }
+
+    handleCheckpoints(player,nearest.t);
   }
 
-  // stadium collision
   for(const wall of stadiumWalls){
     const wp=wall.position;
     const dx=player.pos.x-wp.x;
@@ -1369,8 +1473,8 @@ function updatePlayer(dt){
   const wheelRot=player.speed*dt*40;
   player.wheels.forEach(w=>w.rotation.x-=wheelRot);
 
-  const slip=Math.abs(lateralDist)*speedNorm;
-  if(slip>0.4&&Math.abs(player.speed)>0.25){
+  const slip=Math.abs(player.speed)*Math.abs(player.steer);
+  if(slip>0.15&&Math.abs(player.speed)>0.25){
     player.skidTimer+=dt;
     if(player.skidTimer>0.03){
       const rl=player.wheels[2].getWorldPosition(new V3());
@@ -1381,18 +1485,18 @@ function updatePlayer(dt){
     }
   }else player.skidTimer=0;
 
-  player.fuel=Math.max(0,player.fuel-dt*0.01*(0.3+speedNorm));
+  const fuelDrainBase=(gameMode==='cops'?0.004:0.01);
+  player.fuel=Math.max(0,player.fuel-dt*fuelDrainBase*(0.3+speedNorm));
   if(player.fuel<=0) player.speed*=0.98;
 
   damageFill.style.width=(player.damage*100)+'%';
   fuelFill.style.width=(player.fuel*100)+'%';
-
-  handleCheckpoints(player,nearest.t);
 }
 
-/* AI PHYSICS WITH OVERTAKE */
+/* AI PHYSICS WITH OVERTAKE (RACE MODE) */
 
 function updateAI(dt){
+  if(gameMode!=='race') return;
   const len=spline.getLength();
   for(const c of cpuCars){
     c.overtakeTimer-=dt;
@@ -1450,6 +1554,121 @@ function updateAI(dt){
   }
 }
 
+/* COPS AI (COPS MODE) */
+
+let copsSurvivalTime=0;
+let copsSpawnTimer=0;
+
+function spawnInitialCops(){
+  copCars.forEach(c=>scene.remove(c.mesh));
+  copCars=[];
+  for(let i=0;i<2;i++){
+    const {group:wMesh,wheels:wWheels}=makeCarMesh('police');
+    scene.add(wMesh);
+    const st=carStatsFor('police');
+    const cs=createCarState(wMesh,wWheels,{
+      ai:true,
+      maxSpeed:st.maxSpeed,
+      accel:st.accel,
+      brake:2.0,
+      drag:2.0,
+      baseGrip:st.grip*6,
+      turnSpeed:2.4,
+      name:'COP',
+      isCop:true
+    });
+    placeCarInArena(cs,25);
+    copCars.push(cs);
+    allCars.push(cs);
+  }
+  copsSpawnTimer=0;
+  copsSurvivalTime=0;
+}
+
+function spawnExtraCop(){
+  const {group:wMesh,wheels:wWheels}=makeCarMesh('police');
+  scene.add(wMesh);
+  const st=carStatsFor('police');
+  const cs=createCarState(wMesh,wWheels,{
+    ai:true,
+    maxSpeed:st.maxSpeed*1.05,
+    accel:st.accel*1.05,
+    brake:2.0,
+    drag:2.0,
+    baseGrip:st.grip*6,
+    turnSpeed:2.6,
+    name:'COP',
+    isCop:true
+  });
+  placeCarInArena(cs,28);
+  copCars.push(cs);
+  allCars.push(cs);
+}
+
+function updateCops(dt){
+  if(gameMode!=='cops') return;
+  copsSurvivalTime+=dt;
+  copsSpawnTimer+=dt;
+  if(copsSpawnTimer>30){
+    copsSpawnTimer=0;
+    spawnExtraCop();
+  }
+
+  for(const c of copCars){
+    const toPlayer=player.pos.clone().sub(c.pos);
+    const dist=toPlayer.length();
+    const dir=toPlayer.clone().normalize();
+
+    const predict=player.pos.clone().add(dir.clone().multiplyScalar(3));
+    const desiredDir=predict.clone().sub(c.pos).normalize();
+
+    const targetHeading=Math.atan2(desiredDir.x,desiredDir.z);
+    let diff=targetHeading-c.heading;
+    while(diff>Math.PI) diff-=Math.PI*2;
+    while(diff<-Math.PI) diff+=Math.PI*2;
+    const steer=Math.max(-1,Math.min(1,diff*2.5));
+    c.heading+=steer*c.turnSpeed*dt;
+
+    const q=new Q().setFromAxisAngle(new V3(0,1,0),c.heading);
+    c.mesh.quaternion.slerp(q,Math.min(1,18*dt));
+
+    const forward=new V3(0,0,-1).applyQuaternion(c.mesh.quaternion);
+    const targetSpeed=c.maxSpeed*(0.6+0.4*Math.min(1,dist/30));
+    if(c.speed<targetSpeed) c.speed+=c.accel*dt;
+    else c.speed-=c.accel*dt*0.7;
+    c.speed=Math.max(0.1,Math.min(c.maxSpeed*1.2,c.speed));
+
+    c.pos.add(forward.multiplyScalar(c.speed*dt*60));
+
+    for(const wall of stadiumWalls){
+      const wp=wall.position;
+      const dx=c.pos.x-wp.x;
+      const dz=c.pos.z-wp.z;
+      const d=Math.sqrt(dx*dx+dz*dz);
+      if(d<3.5){
+        const push=3.5-d;
+        const dir2=new V3(dx,0,dz).normalize();
+        c.pos.add(dir2.multiplyScalar(push));
+        c.speed*=0.4;
+      }
+    }
+
+    c.mesh.position.copy(c.pos);
+    c.mesh.position.y=0.5;
+
+    const wheelRot=c.speed*dt*40;
+    c.wheels.forEach(w=>w.rotation.x-=wheelRot);
+
+    const dToPlayer=c.pos.distanceTo(player.pos);
+    if(dToPlayer<1.6){
+      running=false;
+      banner.textContent='BUSTED!';
+      banner.style.display='block';
+      setTimeout(()=>banner.style.display='none',2500);
+    }
+  }
+}
+
 /* SMOKE / CRASH UPDATE */
 
 function updateSmoke(dt){
@@ -1501,6 +1720,7 @@ const hudLap=document.getElementById('hudLap');
 const hudPos=document.getElementById('hudPos');
 const hudSpeed=document.getElementById('hudSpeed');
 const hudBest=document.getElementById('hudBest');
+const hudTimer=document.getElementById('hudTimer');
 const toast=document.getElementById('toast');
 
 let bestLap=null,currentLapStartTime=null,sessionStartTime=performance.now();
@@ -1512,13 +1732,43 @@ function showToast(msg,ms=1500){
 }
 
 function updateHUD(){
+  if(gameMode==='race' || gameMode==='time'){
+    hudLap.style.display='block';
+    hudBest.style.display='block';
+  }else{
+    hudLap.style.display='none';
+    hudBest.style.display='none';
+  }
+
+  if(gameMode==='race'){
+    const standings=allCars.map(c=>{
+      const t=c.ai?c.tOnSpline:nearestCenterPoint(c.pos).t;
+      return {c,progress:c.lap+t};
+    }).sort((a,b)=>b.progress-a.progress);
+    const pos=standings.findIndex(s=>s.c===player)+1;
+    hudPos.style.display='block';
+    hudPos.textContent=`Pos: ${pos} / ${allCars.length}`;
+  }else{
+    hudPos.style.display='none';
+  }
+
+  if(gameMode==='time'){
+    const now=performance.now();
+    if(currentLapStartTime){
+      const lapTime=(now-currentLapStartTime)/1000;
+      hudTimer.textContent='Lap: '+lapTime.toFixed(3);
+    }else{
+      hudTimer.textContent='Lap: 0.000';
+    }
+  }else if(gameMode==='cops'){
+    hudTimer.textContent='Survive: '+copsSurvivalTime.toFixed(3);
+  }else{
+    const now=performance.now();
+    const t=(now-sessionStartTime)/1000;
+    hudTimer.textContent='Time: '+t.toFixed(3);
+  }
+
   hudLap.textContent=`Lap: ${player.lap} / ${lapTarget}`;
-  const standings=allCars.map(c=>{
-    const t=c.ai?c.tOnSpline:nearestCenterPoint(c.pos).t;
-    return {c,progress:c.lap+t};
-  }).sort((a,b)=>b.progress-a.progress);
-  const pos=standings.findIndex(s=>s.c===player)+1;
-  hudPos.textContent=`Pos: ${pos} / ${allCars.length}`;
   hudSpeed.textContent=`Speed: ${(player.speed*60).toFixed(1)}`;
 }
 
@@ -1535,6 +1785,7 @@ function buildCheckpoints(count=12){
 buildCheckpoints();
 
 function handleCheckpoints(car,t){
+  if(gameMode==='cops') return;
   let nearestIdx=car.lastCheckpoint;
   let bestDist=Infinity;
   for(let i=0;i<checkpoints.length;i++){
@@ -1557,9 +1808,15 @@ function handleCheckpoints(car,t){
             }
           }
           currentLapStartTime=now;
-          if(car.lap>=lapTarget){
+          if(gameMode==='race' && car.lap>=lapTarget){
             running=false;
             banner.textContent='FINISHED!';
+            banner.style.display='block';
+            setTimeout(()=>banner.style.display='none',2000);
+          }
+          if(gameMode==='time' && car.lap>=lapTarget){
+            running=false;
+            banner.textContent='TIME TRIAL DONE';
             banner.style.display='block';
             setTimeout(()=>banner.style.display='none',2000);
           }
@@ -1590,22 +1847,29 @@ function drawMinimap(){
   const scale=3;
   mmCtx.scale(scale,scale);
 
-  mmCtx.strokeStyle='#1f2937';
-  mmCtx.lineWidth=4/scale;
-  mmCtx.beginPath();
-  const steps=200;
-  for(let i=0;i<=steps;i++){
-    const t=i/steps;
-    const p=spline.getPointAt(t);
-    const x=p.x,y=p.z;
-    if(i===0) mmCtx.moveTo(x,y);
-    else mmCtx.lineTo(x,y);
+  if(gameMode!=='cops'){
+    mmCtx.strokeStyle='#1f2937';
+    mmCtx.lineWidth=4/scale;
+    mmCtx.beginPath();
+    const steps=200;
+    for(let i=0;i<=steps;i++){
+      const t=i/steps;
+      const p=spline.getPointAt(t);
+      const x=p.x,y=p.z;
+      if(i===0) mmCtx.moveTo(x,y);
+      else mmCtx.lineTo(x,y);
+    }
+    mmCtx.stroke();
+  }else{
+    mmCtx.fillStyle='#0f172a';
+    mmCtx.beginPath();
+    mmCtx.arc(0,0,40,0,Math.PI*2);
+    mmCtx.fill();
   }
-  mmCtx.stroke();
 
   for(const c of allCars){
     const isPlayer=c===player;
-    mmCtx.fillStyle=isPlayer?'#22c55e':'#e5e7eb';
+    mmCtx.fillStyle=isPlayer?'#22c55e':(c.isCop?'#ef4444':'#e5e7eb');
     mmCtx.beginPath();
     mmCtx.arc(c.pos.x,c.pos.z,isPlayer?2.4:1.8,0,Math.PI*2);
     mmCtx.fill();
@@ -1640,10 +1904,14 @@ window.addEventListener('keydown',e=>{
 });
 
 function quickResetPlayer(){
-  const nearest=nearestCenterPoint(player.pos);
-  placeCarOnSpline(player,nearest.t,0);
+  if(gameMode==='cops'){
+    placeCarInArena(player,10);
+  }else{
+    const nearest=nearestCenterPoint(player.pos);
+    placeCarOnSpline(player,nearest.t,0);
+  }
   player.speed=0;
-  showToast('Reset to track');
+  showToast('Reset');
 }
 
 async function runCountdown(){
@@ -1694,6 +1962,7 @@ function loop(){
   if(running&&!paused&&raceStarted){
     updatePlayer(dt);
     updateAI(dt);
+    updateCops(dt);
   }
   updateSmoke(dt);
   updateCrashParticles(dt);
