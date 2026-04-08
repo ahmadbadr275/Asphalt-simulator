@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Custom Racer – Modes + Change Car</title>
+<title>Custom Racer – Full Fixed & Upgraded</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
@@ -1374,7 +1374,7 @@ function resetCars(){
   copsSurvivalTime=0;
 }
 
-/* PLAYER PHYSICS (STEERING FIXED) */
+/* PLAYER PHYSICS – STEERING FIXED */
 
 const boostFill=document.getElementById('boostFill');
 const damageFill=document.getElementById('damageFill');
@@ -1423,7 +1423,7 @@ function updatePlayer(dt){
   const q=new Q().setFromAxisAngle(new V3(0,1,0),player.heading);
   player.mesh.quaternion.slerp(q,Math.min(1,18*dt));
 
-  const forward=new V3(0,0,-1).applyQuaternion(player.mesh.quaternion);
+  const forward=new V3(0,0,1).applyQuaternion(player.mesh.quaternion);
 
   const drift=0.5*speedNorm*Math.abs(player.steer);
   const lateral=new V3(-forward.z,0,forward.x).multiplyScalar(drift);
@@ -1632,7 +1632,7 @@ function updateCops(dt){
     const q=new Q().setFromAxisAngle(new V3(0,1,0),c.heading);
     c.mesh.quaternion.slerp(q,Math.min(1,18*dt));
 
-    const forward=new V3(0,0,-1).applyQuaternion(c.mesh.quaternion);
+    const forward=new V3(0,0,1).applyQuaternion(c.mesh.quaternion);
     const targetSpeed=c.maxSpeed*(0.6+0.4*Math.min(1,dist/30));
     if(c.speed<targetSpeed) c.speed+=c.accel*dt;
     else c.speed-=c.accel*dt*0.7;
