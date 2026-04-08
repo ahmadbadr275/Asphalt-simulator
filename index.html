@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Custom Racer – Detailed Cars, Fixed Steering</title>
+<title>Custom Racer – Preview & Fixed Steering</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 
 <script src="https://cdn.jsdelivr.net/npm/three@0.154.0/build/three.min.js"></script>
@@ -306,6 +306,31 @@
     cursor:pointer;
   }
 
+  #garagePreviewWrap{
+    margin-top:8px;
+    width:220px;
+    height:140px;
+    border-radius:14px;
+    border:1px solid rgba(148,163,184,0.7);
+    background:radial-gradient(circle at top,#020617,#020617 60%,#000);
+    overflow:hidden;
+    position:relative;
+  }
+  #garagePreviewCanvas{
+    width:100%;
+    height:100%;
+    display:block;
+  }
+  #garagePreviewLabel{
+    position:absolute;
+    left:8px;
+    bottom:6px;
+    font-size:10px;
+    color:#9ca3af;
+    letter-spacing:0.08em;
+    text-transform:uppercase;
+  }
+
   /* Home screen */
   #homeScreen{
     position:fixed;inset:0;z-index:70;
@@ -455,8 +480,14 @@
       <div class="statBar"><div class="statFill" style="width:84%;"></div></div>
     </div>
   </div>
+
+  <div id="garagePreviewWrap">
+    <canvas id="garagePreviewCanvas"></canvas>
+    <div id="garagePreviewLabel">Preview</div>
+  </div>
+
   <div id="garageBottom">
-    <div id="garageHint">Tap a car, then press START RACE</div>
+    <div id="garageHint">Tap a car, see it above, then press START RACE</div>
     <button id="garageStartBtn">Start Race</button>
   </div>
 </div>
@@ -464,6 +495,8 @@
 <script>
 const V3 = THREE.Vector3;
 const Q = THREE.Quaternion;
+
+/* MAIN RENDERER */
 
 const container = document.getElementById('canvas-wrap');
 const renderer = new THREE.WebGLRenderer({antialias:true});
@@ -1119,8 +1152,65 @@ carCards.forEach(card=>{
     carCards.forEach(c=>c.classList.remove('selected'));
     card.classList.add('selected');
     selectedCar=card.dataset.car;
+    updateGaragePreview(selectedCar);
   });
 });
+
+/* GARAGE PREVIEW RENDERER */
+
+const previewCanvas=document.getElementById('garagePreviewCanvas');
+const previewLabel=document.getElementById('garagePreviewLabel');
+const previewRenderer=new THREE.WebGLRenderer({canvas:previewCanvas,antialias:true,alpha:true});
+previewRenderer.setPixelRatio(Math.min(window.devicePixelRatio||1,2));
+function resizePreview(){
+  const rect=previewCanvas.getBoundingClientRect();
+  previewRenderer.setSize(rect.width*2,rect.height*2,false);
+}
+resizePreview();
+window.addEventListener('resize',resizePreview);
+
+const previewScene=new THREE.Scene();
+previewScene.background=null;
+const previewCamera=new THREE.PerspectiveCamera(35,1,0.1,100);
+previewCamera.position.set(4,3,6);
+previewCamera.lookAt(0,0.6,0);
+
+const previewLight1=new THREE.DirectionalLight(0xffffff,1.0);
+previewLight1.position.set(5,8,6);
+previewScene.add(previewLight1);
+const previewLight2=new THREE.AmbientLight(0xffffff,0.4);
+previewScene.add(previewLight2);
+
+const previewGround=new THREE.Mesh(
+  new THREE.PlaneGeometry(20,20),
+  new THREE.MeshStandardMaterial({color:0x020617,roughness:0.9,metalness:0.1})
+);
+previewGround.rotation.x=-Math.PI/2;
+previewGround.position.y=0;
+previewScene.add(previewGround);
+
+let previewCar=null;
+function updateGaragePreview(type){
+  if(previewCar) previewScene.remove(previewCar);
+  const {group}=makeCarMesh(type);
+  previewCar=group;
+  previewCar.position.set(0,0,0);
+  previewScene.add(previewCar);
+  previewLabel.textContent=type.toUpperCase()+' PREVIEW';
+}
+updateGaragePreview(selectedCar);
+
+function renderPreview(){
+  if(previewCar){
+    previewCar.rotation.y+=0.01;
+  }
+  previewRenderer.render(previewScene,previewCamera);
+  requestAnimationFrame(renderPreview);
+}
+requestAnimationFrame(renderPreview);
+
+/* GARAGE START */
+
 garageStartBtn.addEventListener('click',()=>{
   garage.style.display='none';
   resetCars();
@@ -1231,8 +1321,8 @@ function updatePlayer(dt){
   const q=new Q().setFromAxisAngle(new V3(0,1,0),player.heading);
   player.mesh.quaternion.slerp(q,Math.min(1,18*dt));
 
-  // FORWARD DIRECTION FIX: car faces +Z
-  const forward=new V3(0,0,1).applyQuaternion(player.mesh.quaternion);
+  // FORWARD DIRECTION FIX: car faces -Z in model, so use -Z
+  const forward=new V3(0,0,-1).applyQuaternion(player.mesh.quaternion);
 
   const drift=0.5*speedNorm*Math.abs(player.steer);
   const lateral=new V3(-forward.z,0,forward.x).multiplyScalar(drift);
@@ -1621,6 +1711,7 @@ window.addEventListener('resize',()=>{
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth,window.innerHeight);
   resizeMinimap();
+  resizePreview();
 });
 </script>
 </body>
