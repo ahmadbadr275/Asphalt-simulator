@@ -1136,28 +1136,77 @@ trackThumbs.forEach(t=>{
 });
 
 /* Physics & AI – BALANCED STEERING, NO WEIRD SIDE PULL */
-function updatePlayer(dt){
+function updatePlayer(dt) {
+
+  // --- INPUT ---
   const forwardKey = keys['w'] || keys['arrowup'] || touchForward;
   const backKey    = keys['s'] || keys['arrowdown'];
   const leftKey    = keys['a'] || keys['arrowleft'] || touchLeft;
   const rightKey   = keys['d'] || keys['arrowright'] || touchRight;
 
+  // throttle
   player.throttle = forwardKey ? 1 : backKey ? -1 : 0;
 
+  // steering input
   let steerInput = 0;
-  if(tiltEnabled){
-    steerInput = tiltSteer;
-  }else{
+  if (tiltMode) {
+    steerInput = tiltSteer;          // tiltSteer already normalized -1..1
+  } else {
     if (leftKey && !rightKey) steerInput = -1;
     else if (rightKey && !leftKey) steerInput = 1;
   }
   player.steer = steerInput;
 
+  // --- SPEED ---
   if (player.throttle !== 0) {
     player.speed += player.throttle * player.accel * dt;
   } else {
-    player.speed *= 0.97;
+    player.speed -= player.drag * dt * Math.sign(player.speed);
   }
+
+  // clamp speed
+  const maxFwd = player.maxSpeed;
+  const maxRev = -player.maxSpeed * 0.4;
+  player.speed = Math.min(maxFwd, Math.max(maxRev, player.speed));
+  if (Math.abs(player.speed) < 0.001) player.speed = 0;
+
+  // --- HEADING (CAR-BASED) ---
+  const speedFactor = Math.min(1, Math.abs(player.speed) / maxFwd);
+  const turnRate = player.turnSpeed * (0.4 + 0.6 * speedFactor);
+
+  // update heading
+  player.heading += player.steer * turnRate * dt;
+
+  // update rotation quaternion
+  const q = new THREE.Quaternion();
+  q.setFromAxisAngle(new THREE.Vector3(0,1,0), player.heading);
+  player.mesh.quaternion.copy(q);
+
+  // --- FORWARD MOVEMENT (CAR LOCAL SPACE) ---
+  const forward = new THREE.Vector3(0,0,-1).applyQuaternion(player.mesh.quaternion);
+  player.pos.add(forward.multiplyScalar(player.speed * dt * 60));
+
+  // apply position
+  player.mesh.position.copy(player.pos);
+
+  // --- ROAD CORRECTION (OPTIONAL) ---
+  const nearest = nearestCenterPoint(player.pos);
+  const center = nearest.point;
+  const tan = spline.getTangentAt(nearest.t).normalize();
+  const bin = new THREE.Vector3().crossVectors(new THREE.Vector3(0,1,0), tan).normalize();
+  const lateral = player.pos.clone().sub(center).dot(bin);
+  const halfRoad = 7 * 0.5 - 0.5;
+
+  if (Math.abs(lateral) > halfRoad) {
+    const dir = lateral > 0 ? 1 : -1;
+    player.pos.add(bin.clone().multiplyScalar((halfRoad - Math.abs(lateral)) * dir));
+    player.speed *= 0.4;
+  }
+
+  // update mesh position again
+  player.mesh.position.copy(player.pos);
+}
+
 
   player.speed = Math.max(-player.maxSpeed * 0.4, Math.min(player.maxSpeed, player.speed));
 
